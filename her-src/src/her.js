@@ -20,6 +20,7 @@
 //   Her.setObjects(json)          房间里摆什么(数组,见下)
 //   Her.setRoom(json)             换房间布置(背景 / 相机 / 每件摆在哪,见 setRoom)
 //   Her.setScenery(url)           整个房间的模型(room.glb),可选
+//   Her.setMotion(url)            她做的那段动作(motion/*.vrma),可选
 //
 // 反向(Kotlin 侧 @JavascriptInterface,这里只调):
 //   HerBridge.onReady() / onError(msg) / onNote(msg)
@@ -30,6 +31,12 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+// ★ 2026-10-08:她的**动作**(.vrma)。官方那份(MIT),干两件事:
+//   VRMAnimationLoaderPlugin 让 GLTFLoader 认得 .vrma 里的「VRMC_vrm_animation」扩展;
+//   createVRMAnimationClip 把它翻译成一条能喂给 AnimationMixer 的轨道。
+//   ★ 轨道名指向的是**标准化骨骼节点**(Normalized_xxx)—— 所以下面 mixer 的根
+//     必须是 vrm.scene(那正是标准化骨骼挂在的地方),不能是 scene。
+import { createVRMAnimationClip, VRMAnimationLoaderPlugin } from '@pixiv/three-vrm-animation';
 import { buildRoom } from './room.js';
 
 // ---------------------------------------------------------------------------
@@ -196,6 +203,13 @@ class Her {
     // room.json 写 "builtin": false → 关掉(setRoom 里认这一项)。
     this.roomRoot = null;
     this.roomBuiltin = true;             // 它**想不想**被看见(见 boot 里怎么落地)
+
+    // ---- 她的动作(见 setMotion)-----------------------------------------
+    // ★ 三样都默认空 = **没放动作文件时这一段代码一步都不走**,
+    //   她照旧是原来那套待机微动(呼吸 / 缓慢摆头 / 眨眼)—— 上次验过的样子一个像素不变。
+    this.mixer = null;                   // THREE.AnimationMixer,根是 vrm.scene(见 import 那段)
+    this.motionAction = null;            // 正在做的那条动作;null = 没有动作
+    this.motionName = '';                // 日志用:现在做的是谁
   }
 
   /**
@@ -884,6 +898,88 @@ class Her {
   }
 
   /**
+   * 她要做的**动作**(`motion/*.vrma`,VRM Animation)。
+   *
+   * ★★ 为什么这是**唯一**一件由 Kotlin 主动推、而不是页面自己来请求的东西:
+   *   模型和房间模型都有个自然的请求方(页面知道该请求哪个名字);
+   *   而动作没有 —— 页面不知道用户放了什么、也不知道该请求哪个文件名。
+   *   所以 `pushMotion` 先查盘,确认文件在,才调到这里。
+   *
+   * ★ 走到这儿说明**文件确实在**(Kotlin 查过)。所以这里不「试一下万一有呢」——
+   *   那样每次出场都打一个 404,而控制台里那行红字会把真正的错误淹掉。
+   *   它是 `setScenery` 的同一条规矩。
+   *
+   * ★★ 和待机微动的关系(这一条最容易做错):
+   *   动作文件里写的是**绝对姿势**(胳膊抬到哪、腿迈到哪),而 update() 里那套
+   *   待机微动每帧都在重写 head/chest/spine/hips —— 两边同时写同几根骨头,
+   *   结果是一抖一抖地互相打架。所以动作一开始,update() 里那一段整块让位
+   *   (见那边的 `motionOn` 判断)。
+   *   ★ 但**眨眼 / 表情 / 口型 / 视线一样都不让** —— 那些走的是
+   *     expressionManager 和 lookAt,不是骨骼,和动作各管各的。
+   *     所以她是「一边做动作一边说话一边眨眼」,不是「做动作时变成木头人」。
+   */
+  async setMotion(url) {
+    const vrm = this.vrm;
+    if (!this.scene || !vrm || !url) return;
+
+    let gltf;
+    try {
+      const loader = new GLTFLoader();
+      loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
+      gltf = await loader.loadAsync(url);
+    } catch (e) {
+      // ★ 走到这儿 = Kotlin 确认过文件在、却还是没读进来(格式不对 / 传了一半)。
+      //   不说出来的话,用户看到的是「我把动作丢进去了,她没动」——
+      //   而那个和「你没放对文件夹」在屏幕上一模一样。
+      this.note('动作加载失败: ' + (e?.message || e));
+      return;
+    }
+
+    // GLTFLoader 把解出来的动作放在 userData.vrmAnimations(是个数组)。
+    // ★ 一个 .vrma 文件正常只有一段动作。多于一段是**我们不认识的形状** ——
+    //   静默挑第一段的话,用户会以为后面那几段也生效了。
+    const anims = gltf.userData?.vrmAnimations;
+    if (!Array.isArray(anims) || anims.length === 0) {
+      this.note('这个文件里没有 VRM 动作(缺 VRMC_vrm_animation 扩展),忽略');
+      return;
+    }
+    if (anims.length > 1) {
+      this.note('动作文件里有 ' + anims.length + ' 段,只用第一段(其余没用上)');
+    }
+
+    let clip;
+    try {
+      // 把 VRM Animation 翻译成普通 AnimationClip。
+      // ★ 它会自己去找标准化骨骼节点 —— 找不到的那几条轨道它**不会报错**,
+      //   只是那条轨道不存在(表现成「有的骨头不动」)。
+      clip = createVRMAnimationClip(anims[0], vrm);
+    } catch (e) {
+      this.note('动作翻译失败: ' + (e?.message || e));
+      return;
+    }
+
+    // ★ 根必须是 vrm.scene —— 标准化骨骼就挂在它底下(见文件头 import 那段)。
+    //   挂在 scene 上的话 PropertyBinding 找不到那些节点,结果是**一条轨道都不生效**,
+    //   而它不报错,只表现成「她不动」。
+    if (!this.mixer) this.mixer = new THREE.AnimationMixer(vrm.scene);
+    // 换动作时把上一条**停掉再换**,不是叠上去 —— 两条动作同时在跑
+    // 就是一组骨头被两个方向扯,画面上是抽搐。
+    if (this.motionAction) this.motionAction.stop();
+
+    const action = this.mixer.clipAction(clip);
+    // 循环播。VRMA 里那种「站一会儿、动一下」的待机动作只有循环才一直有东西看;
+    // 播一次就停在最后一帧 = 又变回一尊蜡像。
+    action.setLoop(THREE.LoopRepeat, Infinity);
+    action.reset();
+    action.play();
+    this.motionAction = action;
+    this.motionName = url.split('/').pop() || url;
+
+    this.note('动作:已换上 ' + this.motionName +
+      '(时长 ' + clip.duration.toFixed(1) + 's,循环播;待机微动让位)');
+  }
+
+  /**
    * 把 room.json 里那一件的摆法,套到这个已经造好的物件上。
    *
    * ★ 判据收窄成「**确实是个数**」。放宽成 `Number(ov.x)` 的话,JSON 里的
@@ -1111,33 +1207,44 @@ class Her {
     const lean = this.lean.step(dt);
     const rest = this.rest;
     const head = hum?.getNormalizedBoneNode('head');
-    if (head && rest?.head) {
-      // 原始姿势 + 偏移(见 captureRest 的说明:这里写成 += 会把她拧歪)
-      head.rotation.set(
-        rest.head.x + this.headPitch.step(dt),
-        rest.head.y + this.headYaw.step(dt),
-        rest.head.z + wobble(t * 0.23, 7.7) * 0.02 + (this.listening ? 0.04 : 0),
-      );
-    }
-    const chest = hum?.getNormalizedBoneNode('chest');
-    if (chest && rest?.chest) {
-      chest.rotation.set(
-        rest.chest.x - breath * 0.022 - lean * 0.05,
-        rest.chest.y,
-        rest.chest.z + wobble(t * 0.19, 3.1) * 0.012,
-      );
-    }
-    const spine = hum?.getNormalizedBoneNode('spine');
-    if (spine && rest?.spine) {
-      spine.rotation.set(
-        rest.spine.x + breath * 0.010, rest.spine.y, rest.spine.z,
-      );
-    }
-    const hips = hum?.getNormalizedBoneNode('hips');
-    if (hips && rest) hips.position.y = rest.hipsY + breath * 0.004;
 
-    // 凑近:整个上半身朝镜头压一点点
-    if (rest) vrm.scene.position.z = rest.sceneZ + lean * 0.006;
+    // ★★ 有动作在播的时候,**下面这一整块让位**(见 setMotion 的说明)。
+    //   动作文件写的是绝对姿势,而这几行每帧都在重写同几根骨头 ——
+    //   两边同时写,画面是一抖一抖地互相打架。
+    //   ★ 让掉的只有「姿势」这一组:head / chest / spine 的旋转、hips 的高低、
+    //     和整个场景的前后位移。**眨眼 / 表情 / 口型 / 视线一样都不让** ——
+    //     它们走的是 expressionManager 和 lookAt,不是骨头,和动作各管各的。
+    //     所以她是「一边做动作一边说话一边眨眼」,不是「做动作时变成木头人」。
+    const motionOn = !!this.motionAction;
+    if (!motionOn) {
+      if (head && rest?.head) {
+        // 原始姿势 + 偏移(见 captureRest 的说明:这里写成 += 会把她拧歪)
+        head.rotation.set(
+          rest.head.x + this.headPitch.step(dt),
+          rest.head.y + this.headYaw.step(dt),
+          rest.head.z + wobble(t * 0.23, 7.7) * 0.02 + (this.listening ? 0.04 : 0),
+        );
+      }
+      const chest = hum?.getNormalizedBoneNode('chest');
+      if (chest && rest?.chest) {
+        chest.rotation.set(
+          rest.chest.x - breath * 0.022 - lean * 0.05,
+          rest.chest.y,
+          rest.chest.z + wobble(t * 0.19, 3.1) * 0.012,
+        );
+      }
+      const spine = hum?.getNormalizedBoneNode('spine');
+      if (spine && rest?.spine) {
+        spine.rotation.set(
+          rest.spine.x + breath * 0.010, rest.spine.y, rest.spine.z,
+        );
+      }
+      const hips = hum?.getNormalizedBoneNode('hips');
+      if (hips && rest) hips.position.y = rest.hipsY + breath * 0.004;
+
+      // 凑近:整个上半身朝镜头压一点点
+      if (rest) vrm.scene.position.z = rest.sceneZ + lean * 0.006;
+    }
 
     // ---- 眨眼 ----
     // 真人 2~6 秒一次,不是钟表。连着眨两下也很常见,这里用短间隔模拟。
@@ -1232,6 +1339,13 @@ class Her {
       this.gazeTarget.position.set(headPos.x + gx * 0.55, headPos.y + gy * 0.35, headPos.z + 1.0);
     }
 
+    // ---- 她的动作 ----
+    // ★ 必须在 vrm.update(dt) **之前**。顺序是有道理的:
+    //   mixer 写的是**标准化骨骼**(Normalized_xxx,那就是 setMotion 建它时传 vrm.scene 的原因),
+    //   vrm.update 负责把标准化骨骼**拷到真骨头**上、再算弹簧骨和视线。
+    //   反过来写会慢一帧 —— 而且弹簧骨会拿**上一帧**的姿势去算,头发会抖得很怪。
+    if (this.mixer) this.mixer.update(dt);
+
     // 交给 three-vrm 收尾:骨骼矩阵、弹簧骨、视线骨骼全在这
     vrm.update(dt);
   }
@@ -1272,6 +1386,7 @@ window.Her = {
   // 手机上没有 room/ 那个文件夹、或者里面是空的,这两个一次都不会被调到。
   setRoom: (json) => her.setRoom(json),
   setScenery: (url) => her.setScenery(url),
+  setMotion: (url) => her.setMotion(url),
   // ★ 拍一张透明底的人形(悬浮窗用)。同步返回一个 dataURL 字符串;
   //   她还没出场 / 量不到包围盒时返回空串 —— **调用方必须当「没有」处理**,
   //   别把空串当成图存下去,那样悬浮窗会变成一块空白。

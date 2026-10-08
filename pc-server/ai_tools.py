@@ -138,12 +138,31 @@ def send_hotkey(vk, modifiers=()):
 # 发消息,唯一稳的办法是模拟键盘:Ctrl+F 搜会话 → 打字 → 回车。
 #
 # 安全边界(用户选的是「白名单按键 + 确认打字」):
-#   - **组合键只放开白名单里这些导航/编辑键**,一律不带 Alt / Win ——
-#     Alt+F4(关窗口)、Ctrl+W(关标签)这类破坏键永远到不了这里。
+#   - **组合键只放开白名单里这些导航/编辑键**,修饰键只有 Ctrl / Alt 两个(见
+#     MODIFIER_KEYS)—— 白名单外的键(如 Ctrl+W)永远到不了这里。
 #   - **打字(type)不限内容**,但手机端会在发出来之前先弹确认,这里只负责执行
 #     已经过用户点头的输入。所以 type 不做语义过滤,只限长度防失控。
+#
+# ★★ 2026-10-08 用户拍板:**把 alt+f4 加进白名单**。
+#   原话是「关微信的时候,我让她关微信她就在搜索框中关微信」,而根因是工具箱里
+#   压根没有「关窗口」这个动作 —— 她只能去搜,于是把「关闭」两个字打进了微信
+#   自己的搜索框(详见 AiAgent.resolveMiss 里那一段的注释)。问他要不要给这个
+#   能力,他选的是「**给,直接关不问**」(不给确认框,点一下直接关)。
+#
+#   ★ 形状是**直接进白名单**(他的原话:「组合键不管它,让它加白名单」):
+#     `alt` 进 MODIFIER_KEYS、`f4` 进 SAFE_KEYS,不另开一张表。
+#
+# ★★ 同一天他第二次收紧:**「组合键是可以用,但是危险的组合键不能」**。
+#   所以这件事最后是**两张表一起管**(见下面 DANGEROUS_COMBOS):
+#     白名单(SAFE_KEYS / MODIFIER_KEYS)管「这个键许不许用」;
+#     危险表(DANGEROUS_COMBOS)管「这个组合会不会毁掉他手上的东西」。
+#   ★ 只放白名单是不够的 —— 因为 alt 一旦成了通用修饰键,`ctrl+f4`(关文档)
+#     这种「白名单里的键拼出来的坏组合」就自动合法了。**这正是他补那一句的原因。**
+#
+#   ★ 它照旧受焦点闸管(`hotkey` 一直在 _GUARDED_TOOLS 里),所以「任务窗口被
+#     切走」时这一下按不出去 —— 不会关掉他正在用的别的窗口。
 
-# 单键白名单。字母键 VK = 大写 ASCII;修饰键只有 Ctrl。
+# 单键白名单。字母键 VK = 大写 ASCII。
 VK_RETURN = 0x0D
 VK_TAB = 0x09
 VK_ESCAPE = 0x1B
@@ -158,13 +177,17 @@ VK_UP = 0x26
 VK_RIGHT = 0x27
 VK_DOWN = 0x28
 VK_CONTROL = 0x11
+VK_F4 = 0x73
 
 SAFE_KEYS = {
     "enter": VK_RETURN, "esc": VK_ESCAPE, "tab": VK_TAB,
     "backspace": VK_BACK, "delete": VK_DELETE,
     "up": VK_UP, "down": VK_DOWN, "left": VK_LEFT, "right": VK_RIGHT,
     "home": VK_HOME, "end": VK_END, "pageup": VK_PAGEUP, "pagedown": VK_PAGEDOWN,
-    # Ctrl+字母:查找/编辑/保存/发送。特意**不放** w(关标签)、f4、q 等有破坏性的。
+    # ★ 2026-10-08 进的:配 alt 就是「关掉最前面那个窗口」。为什么呢 ——
+    #   见本段开头「关微信」那一段(工具箱里原先没有关窗口这个动作)。
+    "f4": VK_F4,
+    # Ctrl+字母:查找/编辑/保存/发送。特意**不放** w(关标签)、q 等有破坏性的。
     # l 是 2026-10-03 补的:在浏览器里它是「聚焦地址栏」(地址栏同时就是搜索框)——
     # 而浏览器里**没有别的键能替代它**(Ctrl+F 是「本页内查找」,不是搜网页)。
     # 别的应用里 Ctrl+L 也都是无害的(Word 左对齐、编辑器选中整行),不是破坏性操作。
@@ -172,29 +195,89 @@ SAFE_KEYS = {
     "v": 0x56, "x": 0x58, "y": 0x59, "z": 0x5A,
 }
 
+# 修饰键白名单(2026-10-08 起多了 alt)。**只有这里列出来的才当得了修饰键** ——
+# 名字不在里头的(win / shift…)会被当成主键,然后走「一次只能按一个主键」那条被拒。
+MODIFIER_KEYS = {
+    "ctrl": VK_CONTROL, "control": VK_CONTROL,
+    "alt": VK_MENU,
+}
+
+# ★★ 危险组合表 —— 2026-10-08 用户第二次收紧:「**组合键是可以用,但是危险的
+#   组合键不能**」。这是**白名单之上**的第二道,不是白名单的替代。
+#
+# 判据只有一条:**这一下会不会毁掉他手上的东西**(关掉带未保存内容的文档、
+# 一次删掉一整段)。**不按「看起来吓人」拦** —— 那会越拦越多,最后变成一张
+# 靠感觉写的表,而这个项目的规矩是「形状会撞,表不会」:表要收得回、说得清。
+#
+# | 组合 | 危险在哪 |
+# |---|---|
+# | `ctrl+f4` | 关的是**文档 / 标签页**,可能带着他没保存的活。★ 它和 `alt+f4` 只差一个修饰键,但 alt+f4 关的是**窗口本身**,而且是他点名要的那个动作 —— **所以 alt+f4 不在这张表里** |
+# | `ctrl+delete` / `alt+delete` | 一次删掉**一整段**(一个词 / 到行尾) |
+# | `ctrl+backspace` / `alt+backspace` | 同上,只是往前删 |
+#
+# ★ 故意**不收**的(写在这儿,免得以后有人「顺手」加进去):
+#   - `alt+f4` —— 用户点名要的能力,见上面那段注释。
+#   - `delete` / `backspace` **单按** —— 那是正常编辑,白名单里一直有。
+#   - `ctrl+z` / `ctrl+s` —— 撤销/保存白名单里一直有(2026-10-02 就定的),
+#     「存一下」还是正当任务。**这张表不是用来重审白名单的。**
+#   - `alt+tab` / `alt+方向键` —— 切窗口、翻页,不毁东西。
+#
+# ★ 它**拦不住**什么(要说白,不能让它给人假的安心):「ctrl+a 全选 + delete」
+#   这种**两步**组合它看不见 —— 那两步各自都是白名单里的合法键。那一类归
+#   三层风险闸管,不是这一层。
+# ★★ 改这张表和白名单同一个级别:**要单独说、单独回退**。
+DANGEROUS_COMBOS = {
+    "ctrl+f4",
+    "ctrl+delete", "alt+delete",
+    "ctrl+backspace", "alt+backspace",
+}
+
+
+def _combo_key(mods, mains):
+    """把一次按键归一化成查表用的样子(`["alt"], ["f4"]` → `"alt+f4"`)。
+
+    归一化三件事,全是「人写着不一样、判据里该是同一个」:
+    **顺序**(`f4+alt`)、**大小写**(调用方已经 lower 过了)、
+    以及 **`control` 就是 `ctrl`**(MODIFIER_KEYS 里两个名字指的是同一个键,
+    不归一化的话 `control+f4` 会从危险表里漏过去)。
+    """
+    canon = sorted("ctrl" if m == "control" else m for m in mods)
+    return "+".join(canon + list(mains))
+
+
+def allowed_keys():
+    """白名单里的键 —— 失败回执里报给模型,免得它照原样重试。"""
+    return sorted(SAFE_KEYS.keys())
+
+
 # type 一次最多输入这么多字符。发消息/搜会话够用,再多就是失控了。
 TYPE_MAX_LEN = 500
 
 
 def _press_hotkey(keys_str):
-    """按白名单组合键。格式:「ctrl+f」或「enter」。→ (ok, err_msg)。"""
+    """按白名单组合键。格式:「ctrl+f」「alt+f4」或单个键。→ (ok, err_msg)。"""
     if not IS_WINDOWS:
         return True, ""
     parts = [p.strip().lower() for p in str(keys_str).split("+") if p.strip()]
-    mods = [p for p in parts if p in ("ctrl", "control")]
-    mains = [p for p in parts if p not in ("ctrl", "control")]
-    if len(parts) != len(mods) + len(mains):
-        return False, "组合键格式不对,只支持「ctrl+某键」或单个键"
+
+    mods = [p for p in parts if p in MODIFIER_KEYS]
+    mains = [p for p in parts if p not in MODIFIER_KEYS]
     if len(mains) != 1:
-        return False, "一次只能按一个主键"
+        return False, "一次只能按一个主键(修饰键只认 ctrl / alt)"
     if len(mods) > 1:
-        return False, "只支持一个 ctrl 修饰键"
+        return False, "一次只支持一个修饰键(ctrl 或 alt,不能两个一起)"
     main = mains[0]
     if main not in SAFE_KEYS:
         return False, "按键「%s」不在安全白名单里" % main
+    # ★ 危险组合表在白名单**之后**查 —— 这样「按键不在白名单里」和「这个组合
+    #   危险」两句回执各说各的,模型改法不同(前者换键,后者换做法)。
+    combo = _combo_key(mods, mains)
+    if combo in DANGEROUS_COMBOS:
+        return False, ("组合键「%s」不能按 —— 它会关掉或删掉东西。"
+                       "要关掉整个窗口就用 hotkey(keys=\"alt+f4\")。" % combo)
     vk = SAFE_KEYS[main]
     if mods:
-        send_hotkey(vk, [VK_CONTROL])
+        send_hotkey(vk, [MODIFIER_KEYS[m] for m in mods])
     else:
         send_vk(vk)
     return True, ""
@@ -996,10 +1079,7 @@ _APPS_CFG = {"at": 0.0, "aliases": {}}
 
 
 def _apps_aliases():
-    """apps.json 热加载:{"微信":"shell:AppsFolder\\...","浏览器":"C:\\..\\chrome.exe"}。
-
-    值先过一遍环境变量展开 —— 所以 %APPDATA%\\... 这种写法在别人机器上也对得上。
-    """
+    """apps.json 热加载:{"微信":"shell:AppsFolder\\...","浏览器":"C:\\..\\chrome.exe"}。"""
     try:
         m = os.path.getmtime(APPS_PATH)
     except OSError:
@@ -1010,8 +1090,7 @@ def _apps_aliases():
         with open(APPS_PATH, encoding="utf-8") as fp:
             data = json.load(fp)
         if isinstance(data, dict):
-            _APPS_CFG["aliases"] = {str(k).strip(): os.path.expandvars(str(v))
-                                    for k, v in data.items()
+            _APPS_CFG["aliases"] = {str(k).strip(): str(v) for k, v in data.items()
                                     if not str(k).startswith("_")}
         else:
             _APPS_CFG["aliases"] = {}
@@ -2085,7 +2164,7 @@ def _enter_verified(keys):
 
     ok, err = _press_hotkey(keys)
     if not ok:
-        return {"ok": False, "error": err, "allowed": sorted(SAFE_KEYS.keys())}
+        return {"ok": False, "error": err, "allowed": allowed_keys()}
 
     if base is None:
         return {"ok": True, "pressed": keys.strip(), "verified": "unknown",
@@ -2260,7 +2339,7 @@ def _search_in_browser(query, bar, type_fn):
             break
         ok, err = _press_hotkey("enter")
         if not ok:
-            return {"ok": False, "error": err, "allowed": sorted(SAFE_KEYS.keys())}
+            return {"ok": False, "error": err, "allowed": allowed_keys()}
         # 第一下等 1.6 秒够了:实测标题在导航开始后 0.31 秒就变了,不必等页面画完。
         state, jumped = _wait_navigated(hwnd0, title0, 1.6 if tries == 1 else 2.5)
         if state == "jumped":
@@ -2450,13 +2529,20 @@ TOOLS = {
         "locks": ["pc.keyboard", "pc.foreground"],
     },
     "hotkey": {
-        "desc": "按一个**安全**组合键(只支持 ctrl+某键或单个键,如 ctrl+f 查找、"
-                "ctrl+v 粘贴、enter 回车、esc)。微信里搜会话/发消息、切输入框聚焦用它。"
-                "注意:白名单外的键(含 Alt/Win)会被拒绝。"
+        "desc": "按一个**安全**组合键(修饰键只有 ctrl / alt,主键得在白名单里)。"
+                "微信里搜会话/发消息、切输入框聚焦用它。"
+                "★★ 要**关掉当前这个窗口**(退出/关闭/最小化类的要求)就用 "
+                "hotkey(keys=\"alt+f4\") —— 那是关窗口的唯一正确动作,"
+                "**不要**把这个词拿去 search 或 click_ui,那个窗口里根本没有一样东西叫这个名字,"
+                "拿它去搜只会把「关闭」两个字打进这个应用自己的搜索框。"
+                "★★ 有**危险组合**会被直接拒绝:ctrl+f4(关文档,可能带着没保存的东西)、"
+                "ctrl+delete / alt+delete / ctrl+backspace / alt+backspace(一次删掉一整段)。"
+                "这一条没有商量 —— 被拒了就换做法,别换个写法重试同一个意思。"
+                "注意:白名单外的键也会被拒绝 —— Win 键、ctrl+w 这类一律不开。"
                 "★ enter 是**提交键**:发消息的最后一步就是它 —— 按下后会当场看屏幕"
                 "有没有反应,屏幕一动不动就回失败(那说明内容还躺在输入框里没发出去)。"
                 "所以 type 完**必须**补一次 hotkey(\"enter\"),别以为打进去就等于发出了。",
-        "params": {"keys": "组合键,如 ctrl+f / ctrl+v / enter / esc / ctrl+enter"},
+        "params": {"keys": "组合键,如 alt+f4 关窗口 / ctrl+f / ctrl+v / enter / esc"},
         "locks": ["pc.keyboard", "pc.foreground"],
     },
     "type": {
@@ -2679,7 +2765,7 @@ def execute(call, click_fn=None, type_fn=None, scroll_fn=None):
                 return _enter_verified(keys)
             ok, err = _press_hotkey(args.get("keys", ""))
             if not ok:
-                return {"ok": False, "error": err, "allowed": sorted(SAFE_KEYS.keys())}
+                return {"ok": False, "error": err, "allowed": allowed_keys()}
             return {"ok": True, "pressed": args.get("keys", "").strip()}
         if tool == "type":
             text = str(args.get("text") or "")

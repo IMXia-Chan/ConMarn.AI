@@ -55,7 +55,8 @@ class WardrobeMathTest {
     @Test
     fun `数据文件放行`() {
         for (n in listOf("a.vrm", "room.glb", "room.gltf", "buf.bin",
-                         "floor.png", "wall.JPG", "x.jpeg", "y.webp", "room.json")) {
+                         "floor.png", "wall.JPG", "x.jpeg", "y.webp", "room.json",
+                         "待机.vrma")) {
             assertTrue("$n 该放行", WardrobeMath.allowedExternal(n))
         }
     }
@@ -183,6 +184,72 @@ class WardrobeMathTest {
         assertEquals(Pick.Found("scene.gltf"), p)
     }
 
+    // ---------------------------------------------------------------- 她的动作(.vrma)
+
+    /**
+     * ★★ 这一组钉的是**「动作和她本人是两样东西」**。
+     *
+     * 把 `.vrma` 并进 `MODEL_EXTS` 是个**看起来很顺手的错**,后果却是:
+     * 「换动作」变成「把她换掉」—— 她本人被一条没有身体的动画顶走,
+     * 台上剩一堆骨骼挂在空中。而它**不报错**,只表现成「人没了」。
+     *
+     * 反过来同样致命:动作文件被当成「她本人」挑出来之后,
+     * `person/` 里那份真模型就再也没人用得上。两个方向都钉。
+     */
+    @Test
+    fun `动作和她本人各认各的 不许互相顶掉`() {
+        val files = listOf(c("人物.vrm"), c("站姿.vrma"))
+
+        assertEquals("她本人只认 .vrm", Pick.Found("人物.vrm"),
+            WardrobeMath.pick(files, WardrobeMath.MODEL_EXTS))
+        assertEquals("动作只认 .vrma", Pick.Found("站姿.vrma"),
+            WardrobeMath.pick(files, WardrobeMath.MOTION_EXTS))
+    }
+
+    @Test
+    fun `动作也只认扩展名 不认文件名`() {
+        // 他从 BOOTH 下下来的那份一定叫一串日文/英文名,我们猜不到 —— 和人物同一条规矩。
+        val p = WardrobeMath.pick(
+            listOf(c("README.txt"), c("自然な立ち待機モーション.vrma")),
+            WardrobeMath.MOTION_EXTS,
+        )
+        assertEquals(Pick.Found("自然な立ち待機モーション.vrma"), p)
+    }
+
+    @Test
+    fun `没放动作时要说出它认哪种扩展名`() {
+        // Kotlin 那边靠这句话决定「一句话都不说」(真的没放)
+        // 和「放了个用不了的」(必须说出来)—— 两者在屏幕上长得一样。
+        val p = WardrobeMath.pick(listOf(c("人物.vrm")), WardrobeMath.MOTION_EXTS)
+        assertTrue(p is Pick.None)
+        assertTrue((p as Pick.None).why.contains(".vrma"))
+    }
+
+    @Test
+    fun `坏掉的动作要说出来 不许让她僵在原地`() {
+        // 半截下载 / 写到一半断电 —— 全是 0 字节这个长相。
+        // 不说出来的话,它和「你没放动作」一模一样,而她会**一直僵着**。
+        val p = WardrobeMath.pick(listOf(c("站姿.vrma", 0)), WardrobeMath.MOTION_EXTS)
+        assertTrue(p is Pick.None)
+        assertTrue((p as Pick.None).why.contains("站姿.vrma"))
+    }
+
+    @Test
+    fun `动作放两个一样只认排第一的`() {
+        val p = WardrobeMath.pick(
+            listOf(c("b.vrma"), c("a.vrma")),
+            WardrobeMath.MOTION_EXTS,
+        )
+        assertEquals(Pick.Found("a.vrma", alsoFound = listOf("b.vrma")), p)
+    }
+
+    @Test
+    fun `动作的日志也要说全`() {
+        val got = WardrobeMath.sentence("动作", Pick.Found("站姿.vrma"))
+        assertTrue(got, got.contains("动作"))
+        assertTrue(got, got.contains("站姿.vrma"))
+    }
+
     // ---------------------------------------------------------------- 日志那句话
 
     @Test
@@ -202,5 +269,106 @@ class WardrobeMathTest {
         val got = WardrobeMath.sentence("房间模型", Pick.None("目录里没有 .glb / .gltf 文件"))
         assertTrue(got, got.contains("房间模型"))
         assertTrue(got, got.contains("目录里没有"))
+    }
+
+    // ---------------------------------------------------------------- 挑动作:库里的相对路径(2026-10-09)
+
+    /**
+     * ★★ 这一组是**安全**判据,和 `allowedExternal` 那条同族,但管的是**另一件事**。
+     *
+     * `allowedExternal` 只看得到 **basename**(`substringAfterLast('/')`)—— 所以
+     * `a/../../x.vrma` 会**堂堂正正地过它的关**(它的 basename 是合规的 `.vrma`)。
+     * 这一组补的就是那一段:**路径**归它管,**扩展名**归上面那条管,两道都要有。
+     *
+     * 库里那个新目录(`motion-library/`,含三个来源的子目录)是**唯一**一个
+     * 「路径里带斜杠」的入口 —— 所以这道闸只在这儿长出来,别的路一个字不动。
+     */
+    @Test
+    fun `库里的合法路径要放行`() {
+        // 库里的真实长相:一层子目录 + 文件名。三个来源都是这个形状。
+        for (p in listOf(
+            "Relax.vrma",
+            "vrm-viewer/Relax.vrma",
+            "vroid-official/VRMA_03.vrma",
+            "voxavatar/failed-apology.vrma",
+        )) {
+            assertTrue("$p 该放行", WardrobeMath.safeLibraryPath(p))
+        }
+    }
+
+    @Test
+    fun `库里爬出目录的写法一律挡掉`() {
+        // ★ 这是这一道闸存在的**全部理由**:basename 合规、路径不合规。
+        for (p in listOf(
+            "a/../../x.vrma",
+            "../x.vrma",
+            "..",
+            "./x.vrma",
+            "a/./b.vrma",
+            "vrm-viewer//x.vrma",
+            "/data/x.vrma",
+            "/sdcard/x.vrma",
+            "vrm-viewer\\x.vrma",
+            "",
+            "   ",
+        )) {
+            assertFalse("★ $p 绝不能放行", WardrobeMath.safeLibraryPath(p))
+        }
+    }
+
+    @Test
+    fun `库里的路径也过扩展名白名单`() {
+        // ★ 两道闸是**串**的,不是**或**:路径合规**不代表**放行。
+        //   库里掉一个 .html 进来 = 在 App 自己的源里执行脚本,理由同文件头。
+        assertFalse(WardrobeMath.safeLibraryPath("vrm-viewer/evil.js"))
+        assertFalse(WardrobeMath.safeLibraryPath("a/evil.html"))
+        // ★ 反过来也要钉:路径全合规、扩展名不认 —— 挡下它的是**扩展名那一道**
+        //   (证明这两道不是同一件事,少一道就漏一种)
+        assertFalse(WardrobeMath.safeLibraryPath("vrm-viewer/evil.exe"))
+        assertTrue("路径本身是干净的", WardrobeMath.safeLibraryPath("vrm-viewer/pose.vrma"))
+    }
+
+    @Test
+    fun `库里的目录名要点得出来`() {
+        assertEquals("vrm-viewer", WardrobeMath.libraryFolder("vrm-viewer/Relax.vrma"))
+        assertEquals("voxavatar", WardrobeMath.libraryFolder("voxavatar/walk.vrma"))
+        // 直接躺在库根上的:没有目录
+        assertEquals("", WardrobeMath.libraryFolder("Relax.vrma"))
+    }
+
+    @Test
+    fun `认识的动作要说中文名`() {
+        // ★ 界面上那一栏的全部价值就是「一眼认出来我想让她做哪个」;
+        //   摆一排英文他要先在心里翻译一遍才能点。
+        assertEquals("放松", WardrobeMath.motionLabel("vrm-viewer/Relax.vrma"))
+        assertEquals("生气", WardrobeMath.motionLabel("vrm-viewer/Angry.vrma"))
+        assertEquals("比耶", WardrobeMath.motionLabel("vroid-official/VRMA_03.vrma"))
+        assertEquals("走路", WardrobeMath.motionLabel("voxavatar/walk.vrma"))
+        assertEquals("她原来的待机", WardrobeMath.motionLabel("idle_loop.vrma"))
+    }
+
+    @Test
+    fun `大小写和目录不影响认名`() {
+        assertEquals("放松", WardrobeMath.motionLabel("vrm-viewer/RELAX.VRMA"))
+        assertEquals("放松", WardrobeMath.motionLabel("RELAX.vrma"))
+        assertEquals("放松", WardrobeMath.motionLabel("vrm-viewer/Relax.vrma"))
+    }
+
+    @Test
+    fun `认不出来就退回文件名 不编不猜`() {
+        // ★ 他以后自己丢进来的东西走这条路 —— 那正是它该有的行为。
+        assertEquals("my_pose", WardrobeMath.motionLabel("vrm-viewer/my_pose.vrma"))
+        assertEquals("站姿", WardrobeMath.motionLabel("站姿.vrma"))
+        // ★ 别把「认不出」做成「回一个空串」:那一栏会变成一排空按钮,而且不报错。
+        assertTrue(WardrobeMath.motionLabel("x.vrma").isNotEmpty())
+    }
+
+    @Test
+    fun `没扩展名或者空的时候不许崩`() {
+        // 判定层不许抛 —— 抛在 UI 那条路上就是「她的房间打不开」。
+        assertEquals("README", WardrobeMath.motionLabel("vrm-viewer/README"))
+        WardrobeMath.motionLabel("")
+        WardrobeMath.motionLabel("/")
+        WardrobeMath.motionLabel(".vrma")
     }
 }

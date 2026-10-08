@@ -10,11 +10,12 @@ import java.io.File
  * 列出目录、打开文件、写一行日志。**故意薄到这个程度** —— 因为这一层在
  * 手机拔着的时候是验不了的(2026-10-05 下午)。
  *
- * ## 两个目录
+ * ## 三个目录
  *
  * ```
  * /sdcard/Android/data/com.example.touchpad/files/person/   ← 人物形象
  * /sdcard/Android/data/com.example.touchpad/files/room/     ← 房间布置
+ * /sdcard/Android/data/com.example.touchpad/files/motion/   ← 她的动作
  * ```
  *
  * 和 `models/` / `asr/` / `tts/` 同住 —— 那几样已经是「推进去的、不打进 APK」的惯例,
@@ -29,6 +30,7 @@ internal object Wardrobe {
 
     const val DIR_PERSON = "person"
     const val DIR_ROOM = "room"
+    const val DIR_MOTION = "motion"
 
     /** 房间布置那份配置。★ 名字是我们定的,所以按**精确文件名**找(见 [roomJson])。 */
     const val FILE_ROOM_JSON = "room.json"
@@ -51,6 +53,7 @@ internal object Wardrobe {
 
     fun personDir(ctx: Context): File? = root(ctx)?.let { File(it, DIR_PERSON) }
     fun roomDir(ctx: Context): File? = root(ctx)?.let { File(it, DIR_ROOM) }
+    fun motionDir(ctx: Context): File? = root(ctx)?.let { File(it, DIR_MOTION) }
 
     /**
      * 这一个 WebView 请求,要不要用外部目录里的文件顶掉 APK 里那个?
@@ -62,7 +65,7 @@ internal object Wardrobe {
      *
      * | 请求 | 怎么找 | 为什么 |
      * |---|---|---|
-     * | `.vrm` / `.glb` / `.gltf` | **只认扩展名,不认文件名** —— 目录里排第一的那个 | 他丢进来的一定叫 `新人物.vrm` 这种名字,**我们猜不到**。「放文件就生效」的全部意思就在这一格 |
+     * | `.vrm` / `.glb` / `.gltf` / `.vrma` | **只认扩展名,不认文件名** —— 目录里排第一的那个 | 他丢进来的一定叫 `新人物.vrm` 这种名字,**我们猜不到**。「放文件就生效」的全部意思就在这一格 |
      * | 别的(贴图 / `.bin` / `.json`) | **按文件名精确找** | 这些是模型**自己引用**的(`room.glb` 里写着 `floor.png`),名字必须对得上,不能挑 |
      */
     fun resolve(ctx: Context, path: String): Hit? {
@@ -78,6 +81,9 @@ internal object Wardrobe {
 
             ext in WardrobeMath.SCENERY_EXTS ->
                 pick(ctx, roomDir(ctx), DIR_ROOM, WardrobeMath.SCENERY_EXTS, "房间模型")
+
+            ext in WardrobeMath.MOTION_EXTS ->
+                pick(ctx, motionDir(ctx), DIR_MOTION, WardrobeMath.MOTION_EXTS, "动作")
 
             // 模型自己引用的零碎(贴图 / .bin)。**按名字找** —— 见上面那张表。
             else -> byName(ctx, name)
@@ -147,6 +153,182 @@ internal object Wardrobe {
     fun roomModel(ctx: Context): Hit? =
         pick(ctx, roomDir(ctx), DIR_ROOM, WardrobeMath.SCENERY_EXTS, "房间模型")
 
+    /**
+     * 她的动作(`motion/` 里排第一的 `.vrma`)。和 [roomModel] 同一个形状 ——
+     * 「只认扩展名不认文件名」,因为他下下来的那份一定叫一串日文/英文名,我们猜不到。
+     *
+     * ★ 什么时候调它:**进房间时主动推一次**(见 `ConMarnActivity.pushMotion`)。
+     *   不像人物/房间那样靠页面自己去请求 —— 动作不是「一次加载」的东西,
+     *   它要先被读进来、变成一条动画轨道、再喂给 mixer;这一步得由我们主动发起。
+     *
+     * ★ 返回 null = 没放(那就不管,她照旧用自带的待机微动,一句废话都不说)。
+     *   返回 `Hit(null, 有话要说)` = 里面确实躺着 `.vrma`、但一个都用不了 ——
+     *   **这一格必须说出来**:它就是「我放了却没动」的分界线。
+     */
+    fun motion(ctx: Context): Hit? =
+        pick(ctx, motionDir(ctx), DIR_MOTION, WardrobeMath.MOTION_EXTS, "动作")
+
+    // ------------------------------------------------------------------
+    // 挑动作(2026-10-09)—— 房间主页最右侧那一栏
+    //
+    // ★★ 和上面那套的**关键区别:这条路一个文件都不动**。
+    //
+    // 上面那套是「放文件就生效」:他把文件摆进 `motion/`,排第一的那个就是答案。
+    // 这一条是「他在房间里点一下」:选择**存在偏好里**,库里那份文件原样不动。
+    //
+    // 为什么不做成「把选中的拷进 `motion/`」——那个写法更省事,但**要删掉 `motion/`
+    // 里原来那个文件**。而他往里放什么我们不知道(可能是他自己做的、别处再也找不到的
+    // 一份)。这个项目的硬规矩是「**删任何东西前先问**」,一个点一下就删文件的按钮
+    // 不该绕过它。所以:库是库,`motion/` 是 `motion/`,谁也不覆盖谁。
+    //
+    // ★ 没在界面上挑过的人,行为和今天**一个字都不差**:偏好是空的,
+    //   [WardrobeMath.chosenMotion] 返回 null,一切照旧走 [motion]。
+    // ------------------------------------------------------------------
+
+    /** 偏好文件。和 `ai_agent` / `touchpad` 那些并列,新开一个 —— 别混进别人的键里。 */
+    private const val PREFS = "wardrobe"
+    private const val KEY_MOTION = "motion"
+
+    /** 库里的一个动作。给界面上那一栏用。 */
+    data class Motion(
+        /** 相对**库目录**的路径,如 `vrm-viewer/Relax.vrma`。它就是存进偏好的那个值。 */
+        val rel: String,
+        /** 给他看的中文名,认不出来就是文件名(见 [WardrobeMath.motionLabel])。 */
+        val label: String,
+        /** 来自哪个子目录(显示用)。 |
+         *  直接躺在库根上的返回空串。 */
+        val folder: String,
+        val bytes: Long,
+    )
+
+    /** 一次扫描的结果。★ [skipped] 必须报出来 —— 见下面那条注释。 */
+    data class MotionList(val usable: List<Motion>, val skipped: List<String>)
+
+    /** 动作库目录。和 `motion/` 并列,**不顶掉它**。 */
+    fun motionLibraryDir(ctx: Context): File? =
+        root(ctx)?.let { File(it, WardrobeMath.DIR_MOTION_LIBRARY) }
+
+    /**
+     * 库里有哪几条动作。**只扫两层**(库根 + 一层子目录)—— 库是我们自己铺的,
+     * 三个来源各占一个子目录,不需要递归。
+     *
+     * ★★ **坏文件要说出来,不许静默不显示**:库里躺着一个 0 字节的文件,
+     *   如果在那一栏里**根本不出现**,他看到的就是「我明明拷进去了,怎么没有它」——
+     *   和「你压根没拷」长得一模一样。所以它进 [MotionList.skipped],
+     *   由调用方写进日志(这一层不碰 `ModelManager`,理由见文件头)。
+     */
+    fun listMotions(ctx: Context): MotionList {
+        val base = motionLibraryDir(ctx) ?: return MotionList(emptyList(), emptyList())
+        if (!base.isDirectory) return MotionList(emptyList(), emptyList())
+
+        val usable = ArrayList<Motion>()
+        val skipped = ArrayList<String>()
+        for (child in (base.listFiles() ?: return MotionList(emptyList(), emptyList()))
+            .sortedBy { it.name }) {
+            when {
+                child.isFile -> {
+                    // ★ 库根的散文件:路径就是文件名,照样过 [WardrobeMath.safeLibraryPath]
+                    val rel = child.name
+                    if (!WardrobeMath.safeLibraryPath(rel)) continue
+                    addMotion(child, rel, "", usable, skipped)
+                }
+                child.isDirectory -> {
+                    for (f in (child.listFiles() ?: continue).sortedBy { it.name }) {
+                        if (!f.isFile) continue
+                        val rel = child.name + "/" + f.name
+                        // ★ 白名单 + 爬目录两道闸,和 serve 那条路**同一个函数**
+                        if (!WardrobeMath.safeLibraryPath(rel)) continue
+                        addMotion(f, rel, child.name, usable, skipped)
+                    }
+                }
+            }
+        }
+        return MotionList(usable, skipped)
+    }
+
+    private fun addMotion(
+        f: File,
+        rel: String,
+        folder: String,
+        into: MutableList<Motion>,
+        skipped: MutableList<String>,
+    ) {
+        val ok = try { f.canRead() && f.length() > 0L } catch (_: Exception) { false }
+        // ★ 同一句话的两种说法,和 `WardrobeMath.Pick` 里那段**故意一致**(00 字节 / 读不到)
+        if (!ok) {
+            val why = try { if (!f.canRead()) "读不到" else "0 字节" } catch (_: Exception) { "读不到" }
+            skipped += "$rel($why)"
+            return
+        }
+        into += Motion(rel, WardrobeMath.motionLabel(rel), folder, f.length())
+    }
+
+    /**
+     * 库里那个相对路径对应的文件。**给 serve 那条路用。**
+     *
+     * ★★ 两道闸(**都是纯逻辑、都有单测**):[WardrobeMath.safeLibraryPath] 挡路径与扩展名;
+     *   这里再核一次「出来的文件**确实还在库目录里面**」—— 前一道已经拒了 `..`,
+     *   这一道是补网(真出了意外,宁可读不到,也不许读到库外面去)。
+     *
+     * 返回 null = 读不到 / 不合规 / 是坏的。**调用方必须把这件事说出来**,不许静默。
+     */
+    fun motionFile(ctx: Context, rel: String): File? {
+        if (!WardrobeMath.safeLibraryPath(rel)) return null
+        val base = motionLibraryDir(ctx) ?: return null
+        return try {
+            val f = File(base, rel)
+            if (!f.isFile || !f.canRead() || f.length() <= 0L) return null
+            val root = base.canonicalPath + File.separator
+            if (!f.canonicalPath.startsWith(root)) return null
+            f
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** 他上次在那一栏里点的那条。**从没挑过就是 null** —— 那时行为和今天完全一样。 */
+    fun chosenMotion(ctx: Context): String? = try {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_MOTION, null)
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * 记下他的选择。
+     *
+     * ★ 用 `apply()` 就够(和免打扰时段同一条理由):这里没有 `stopSelf()`,
+     *   不存在「写着盘的时候进程没了」那个竞态 —— 那条 `commit()` 的规矩是给
+     *   她「让她睡」那一步准备的,别照搬过来。
+     *
+     * ★ `rel == null` = 回到「按 `motion/` 排第一那个」—— 也就是**今天的行为**。
+     */
+    fun setChosenMotion(ctx: Context, rel: String?) {
+        try {
+            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(KEY_MOTION, rel?.takeIf { it.isNotBlank() })
+                .apply()
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * 这一轮她该用哪条动作 —— **挑过的优先,没挑过的照旧**。
+     *
+     * ★ 返回值就是 [Hit],调用方拿到的形状和 [motion] 一模一样,不用分两条路。
+     * ★ 挑过的那条**不见了**(他删了 / 改过名)时:**退回 `motion/` 那套,而且要说出来** ——
+     *   不说的话症状是「我明明选过,它却自己变回去了」,而那是这个项目最恨的那种静默。
+     */
+    fun activeMotion(ctx: Context): Hit? {
+        val want = chosenMotion(ctx)
+        if (want == null) return motion(ctx)
+        val f = motionFile(ctx, want)
+        if (f != null) return Hit(f, "动作:用他挑的 $want(${f.length()} 字节)")
+        // ★ 挑过的那条没了:说清楚,再退回去
+        val fallback = motion(ctx)
+        val why = "动作:他挑的 $want 不在了(删了/改名了/是坏文件),退回 motion/ 那套"
+        return if (fallback == null) Hit(null, why) else Hit(fallback.file, why + " —— " + fallback.note)
+    }
+
     /** 贴图那条:按名字精确找,先在 `room/` 再在 `person/`。 */
     private fun byName(ctx: Context, name: String): Hit? {
         for ((dir, dirName) in listOf(roomDir(ctx) to DIR_ROOM, personDir(ctx) to DIR_PERSON)) {
@@ -166,7 +348,11 @@ internal object Wardrobe {
      *   建不出来**不报错** —— 换装是可选功能,不能因为它挡了她出场。
      */
     fun ensure(ctx: Context) {
-        for ((dir, text) in listOf(personDir(ctx) to README_PERSON, roomDir(ctx) to README_ROOM)) {
+        for ((dir, text) in listOf(
+            personDir(ctx) to README_PERSON,
+            roomDir(ctx) to README_ROOM,
+            motionDir(ctx) to README_MOTION,
+        )) {
             try {
                 if (dir == null) continue
                 if (!dir.isDirectory && !dir.mkdirs()) continue
@@ -252,6 +438,41 @@ internal object Wardrobe {
         注意
           · 这个文件夹里只有模型、贴图、room.json 会被读取;别的文件一律不看。
             (尤其:往里放 .js / .html 不会被读取,也不会生效。)
+          · 想换回原样:清空这个文件夹,重开一次 App。
+        """.trimIndent()
+
+    private val README_MOTION = """
+        ConMarn · 她的动作
+        ==================
+
+        把一份动作文件(.vrma)拷进这个文件夹,然后**重开一次 App**。
+        她就会一直做那个动作 —— 而不是像现在这样站着不动。
+
+          · 文件名随意,只认扩展名 .vrma。
+          · 文件夹里**只放一个**。放两个的话用按名字排在前面那个,
+            并且把「还有谁没用上」写进日志。
+          · 文件坏掉 / 是 0 字节的话,会明说原因并**退回她自带的待机姿势**,
+            不会让她僵住。
+
+        .vrma 是什么、去哪找
+          VRM 的动作和人物是**分开的两个文件**:
+            人(.vrm)只管长什么样、有什么表情;
+            动作(.vrma)只管胳膊腿怎么动 —— 而且**它和人物无关**,
+            同一条动作换个人也能用。所以今天没放,她就一直站在同一个姿势上。
+
+          免费的动作可以在 BOOTH 上找,搜「VRMA」或「立ちモーション」,
+          下载前看清作者写的授权(能不能商用、要不要署名)。
+          导出时**必须选 .vrma**;如果下到的是 .fbx / .bvh,
+          那是给别的软件用的,这里认不了。
+
+        在哪看它到底用了哪条:
+          /sdcard/Android/media/com.example.touchpad/model.log
+          搜「换装:」三个字。认不出来 / 读不到,原因也写在那儿。
+
+        注意
+          · 只认 .vrma。这个文件夹里别的东西一律不看。
+          · 她脸上和嘴上的东西(眨眼、表情、口型)**不受它影响** ——
+            动作只管身体,说话时的嘴还是她自己控制的。
           · 想换回原样:清空这个文件夹,重开一次 App。
         """.trimIndent()
 }

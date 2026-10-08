@@ -47,17 +47,35 @@ internal object WardrobeMath {
     val SCENERY_EXTS = listOf("glb", "gltf")
 
     /**
+     * 她的动作认这一个。
+     *
+     * `.vrma` 是 **VRM Animation**,里面装的是「骨骼每一帧转到哪」——
+     * 换句话说它和 `.glb` 一样是个 glTF 容器,**是数据,不是程序**:
+     * 它里面没有一行会被执行的代码(见 [ALLOWED_EXTS] 那条判据)。
+     *
+     * ★ **别把它并进 [MODEL_EXTS]** —— 那会把动作文件当成「她本人」挑出来,
+     * 于是「换动作」变成了「把她换掉」,而她会长成一堆骨骼挂在空中。
+     * 三种扩展名各自一张表,是因为它们**放在三个不同的目录**里(见 [Wardrobe])。
+     */
+    val MOTION_EXTS = listOf("vrma")
+
+    /**
      * ★★ 外部目录里的文件,**只有**这几种会被 serve。
      *
      * 判据是白名单:不在表里的一律当「不存在」,连读都不读。
      * 特别地 —— **`.html` / `.js` / `.css` / `.svg` 永远不在表里**,
      * 原因见文件头。**别往里加。**
+     *
+     * ★ `vrma` 在这里是安全的,理由和 `glb` 一样:它是个**装着数字的容器**,
+     *   浏览器拿到它只会去读动画轨道,绝不会去执行什么。
+     *   (判据始终是「它会不会被执行」,不是「它是谁家的格式」。)
      */
     val ALLOWED_EXTS: Set<String> = setOf(
         "vrm",
         "glb", "gltf", "bin",
         "png", "jpg", "jpeg", "webp",
         "json",
+        "vrma",
     )
 
     /** 目录里一个候选文件的样子。只留判定用得上的东西,这样它能纯逻辑单测。 */
@@ -168,4 +186,111 @@ internal object WardrobeMath {
             }
         }
     }
+
+    // ------------------------------------------------------------------
+    // 挑动作那条路(2026-10-09)
+    //
+    // ★ 它和上面那整套「只认扩展名」是**两件不同的事**,别混:
+    //   上面那套回答的是「**她本人 / 房间 / 她该做哪条动作**」—— 只有一个位置,
+    //   所以「目录里排第一的那个」就是全部答案;
+    //   这里回答的是「**他自己点名要哪一条**」—— 他要的是从一堆里挑,
+    //   而「挑」这个动作用户是**在房间里点的**,不是在文件管理器里摆的。
+    //
+    // ★★ 和「他的设计是他的」那条不冲突:**`motion/` 那套原样一个字不动** ——
+    //   没在界面上挑过的人,行为和今天完全一样(见 [Wardrobe.motion])。
+    //   这里只是**多给一条路**。
+    // ------------------------------------------------------------------
+
+    /** 库目录的名字。和 `motion/` 并列,不顶掉它。 */
+    const val DIR_MOTION_LIBRARY = "motion-library"
+
+    /**
+     * 「库里的相对路径」(如 `vrm-viewer/Relax.vrma`)允不允许读。
+     *
+     * ★★ 为什么**不能**只靠 [allowedExternal]:那个函数只看得见 **basename**
+     *   (`substringAfterLast('/')`),所以 `a/../../x.vrma` 会**堂堂正正地过**它的关。
+     *   这一条补的就是那一段 —— 它管**路径**,[allowedExternal] 管**扩展名**,
+     *   两道都要有。
+     *
+     * 判据(每一条都挡一种真的会发生的写法):
+     * 1. **空**(或全是空白)→ 拒;
+     * 2. **任何一个 `.` / `..` 段** → 拒 —— 这是唯一能爬出库目录的形状;
+     * 3. **反斜杠** → 拒(Windows 风格的写法在这台机上是拼不出路径的,
+     *    放过去只会得到一句难懂的「读不到」);
+     * 4. **开头是 `/`** → 拒(绝对路径 = 绕开根目录);
+     * 5. 最后才问 [allowedExternal] —— **扩展名白名单照旧是唯一的收口**
+     *    (所以 `.js` / `.html` 在这儿也进不来,理由同文件头)。
+     */
+    fun safeLibraryPath(rel: String): Boolean {
+        val t = rel.trim()
+        if (t.isEmpty()) return false
+        if (t.startsWith("/") || t.contains('\\')) return false
+        if (t.split('/').any { it == "." || it == ".." || it.isEmpty() }) return false
+        return allowedExternal(t.substringAfterLast('/'))
+    }
+
+    /** `vrm-viewer/Relax.vrma` → `vrm-viewer`。库里直接躺在根上的返回空串。 */
+    fun libraryFolder(rel: String): String =
+        rel.trim().substringBeforeLast('/', "").trim('/')
+
+    /**
+     * 库里的动作 → **给他看的中文名**。
+     *
+     * ★ 为什么要这张表:那 31 条动作的文件名**全是英文**(`Relax` / `failed-apology` /
+     *   `VRMA_03`)。界面上摆一排英文,他要先在心里翻译一遍才能点 ——
+     *   而这一栏的全部价值就是「一眼认出来我想让她做哪个」。
+     *
+     * ★ 认不出来就**退回文件名本身**(去掉扩展名),不编、不猜 ——
+     *   他以后自己丢进来的东西会走这条路,那正是它该有的行为。
+     */
+    fun motionLabel(rel: String): String {
+        val base = rel.trim().substringAfterLast('/').substringBeforeLast('.').trim()
+        if (base.isEmpty()) return rel.trim()
+        MOTION_LABELS[base.lowercase()]?.let { return it }
+        return base
+    }
+
+    /**
+     * 文件名(小写、不含扩展名)→ 中文名。**只收我们已经确认过内容的那些**
+     * (见 `motion-library/README.txt` 里那份逐条清单)—— 没验过的**不写进来**,
+     * 因为「写一个我没看过的名字」和「瞎猜」没区别。
+     */
+    private val MOTION_LABELS: Map<String, String> = mapOf(
+        // ── vrm-viewer(MIT):11 条情绪动作,3.9s 循环,最整齐的一套 ──
+        "angry" to "生气",
+        "blush" to "害羞",
+        "clapping" to "鼓掌",
+        "goodbye" to "再见",
+        "jump" to "跳一下",
+        "lookaround" to "环顾",
+        "relax" to "放松",
+        "sad" to "难过",
+        "sleepy" to "困了",
+        "surprised" to "惊讶",
+        "thinking" to "思考",
+        // ── pixiv 官方 VRoid 动作包:幅度最大的 7 条 ──
+        "vrma_01" to "全身展示",
+        "vrma_02" to "打招呼",
+        "vrma_03" to "比耶",
+        "vrma_04" to "射击",
+        "vrma_05" to "转圈",
+        "vrma_06" to "模特站姿",
+        "vrma_07" to "深蹲",
+        // ── voxavatar(MIT):种类最杂 ──
+        "airplane-02" to "伸展(短)",
+        "airplane-05" to "伸展(长)",
+        "drink-water" to "喝水",
+        "exercise-step" to "踏步",
+        "failed-apology" to "道歉",
+        "idle-01" to "待机(呼吸眨眼)",
+        "pose-motion" to "摆姿势",
+        "reaction-startle" to "受惊",
+        "review-phone" to "看手机",
+        "run-slow" to "慢跑",
+        "speaking-01" to "说话时的小动作",
+        "success-cheer" to "欢呼",
+        "walk" to "走路",
+        // ── 他原来那条 ──
+        "idle_loop" to "她原来的待机",
+    )
 }

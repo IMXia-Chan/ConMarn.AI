@@ -160,6 +160,10 @@ class TouchpadClient(context: Context) {
 
     // 免码续连:认证通过后电脑签发;掉线后凭它几分钟内静默重连,不用重输配对码
     @Volatile private var resumeToken: String? = null
+    // ★ 这一次连接是**自动**发起的吗(进房间/进电脑页自己拨的),还是用户明确点的?
+    //   只用来判一件事:自动拨号撞上「要输配对码」时,落下 [markAutoBlocked] 那个标记。
+    //   见 [connect] 的 auto 参数和 [PcLink]。
+    @Volatile private var autoAttempt = false
     private val socketLock = Any()                 // 保护 socket/writer 的换连(发送线程 vs 续连线程)
     private val heartbeatStarted = AtomicBoolean(false)
 
@@ -212,11 +216,24 @@ class TouchpadClient(context: Context) {
      * 连接顺序:有上次存下的免密 token 就先试免密(秒连,不输码);
      * token 没有/过期(服务器回 ERR resume expired)才回落到完整配对(配对码 + TOTP)。
      * 断线后自动免码续连;免密 token 已加密存盘,重启 App 也能在几分钟内免密。
+     *
+     * @param auto **这一次拨号是自动发起的吗。** 用户 2026-10-08 那三条(见 [PcLink] /
+     *   [AutoLinkMath])里,只有「自动」那一路才需要留后手 ——
+     *   自动拨号一旦撞上「要输配对码」,就在盘上落一个 [markAutoBlocked] 标记,
+     *   下次**不再自动拨**,等他点(见 [AutoLinkMath] 里那段「光有 ① 掐不断风暴」)。
+     *
+     *   ★ **用户明确点的那一路(`auto = false`)反过来要清掉这个标记** ——
+     *   他点了,意思就是「我知道可能要输码,来吧」。不清的话他手点一次、标记还挂着,
+     *   下次进房间又不动了,那个标记就成了一个关不掉的锁。
+     *   ★ 默认 `false` 是故意的:漏传的地方(手工调试、以后新加的调用点)
+     *   走的是**不会往下留后手**的那条路 —— fail safe 的方向是「别自己动」。
      */
-    fun connect(ip: String, port: Int) {
+    fun connect(ip: String, port: Int, auto: Boolean = false) {
         disconnect()
         hostIp = ip
         hostPort = port
+        autoAttempt = auto
+        if (!auto) clearAutoBlocked()   // 用户自己点的:标记作废,见上面 @param
         mediaToken = null
         fileToken = null   // 新会话:服务端认证通过后会重签
         resumeToken = loadResumeToken(ip)   // 跨重启免密:读上次存下的凭证(空=走配对)
@@ -609,6 +626,11 @@ class TouchpadClient(context: Context) {
                     val resp1 = readLine(bIn) ?: throw TouchpadException("服务器无响应")
                     if (resp1 != "PIN_REQUIRED") throw TouchpadException("协议错误: $resp1")
                     if (myGen != generation.get()) return@Thread
+                    // ★★ 用户 2026-10-08:自动拨号落到这一步 = 该停下来等他了。
+                    //   落下这个标记之后,[PcLink] 那条自动路**不再拨**,直到他自己点一下。
+                    //   没有这一句,「凭证过期 → 自动拨 → 弹配对码」这个圈会一直转:
+                    //   拨号 → 弹码 → 120 秒没人理 → 超时 → 退出去 → 再进 → 又拨一遍。
+                    if (autoAttempt) markAutoBlocked()
                     post { listener?.onPinRequired() }
                     val pin = await(pinQueue, PIN_TTL_SEC) ?: throw TouchpadException("配对码输入超时")
                     writeLine(bOut, "PIN $pin")
@@ -679,6 +701,10 @@ class TouchpadClient(context: Context) {
                 //   用户报的「明明是连着电脑 agent 说没有」。
                 //   ★ 这条属于**连接**的语义,不属于某个界面的语义。放这儿,谁连上都算。
                 //   `sendSigned` 自带 `synchronized(writeLock)`,从连接线程直接调是安全的。
+                // ★ 认证成了(免密或完整配对都算)——「别再自动拨」那个标记作废。
+                //   放这儿而不是放在两条路各自里面:这里是**两条路的汇合点**
+                //   (见上面那段「连上就问一次手」的说明,它选这个位置是同一个理由)。
+                clearAutoBlocked()
                 post { listener?.onConnected() }
                 // ★★ 见 [anchorProcess]:把进程锚到前台,是**连接**的不变量。
                 //   写在 listener 里就变成「谁活着谁负责」—— 而她的房间从不占 listener。
@@ -920,6 +946,11 @@ class TouchpadClient(context: Context) {
             val hand = HandCodec.fromHandInfo(info, System.currentTimeMillis()) ?: return
             HandRegistry.init(appContext)
             HandRegistry.upsert(hand)
+            // ★★ 顺手把「这个 ip 是谁」记下来 —— 免密凭证按身份存(见 [rememberIdentity])。
+            //   这是**第二条**认识身份的时机(第一条更早:扫描时的发现应答)。
+            //   ★ 认出来之后,旧格式存的那个 `resume_<ip>` 会被搬到 `resume_<身份>` 下,
+            //     所以升级上来的手机不用重新配对一次。
+            rememberIdentity(hostIp, hand.id)
             // 对一次工具表漂移。★ `peek()` 而不是 `get()`:没人用助手的时候,
             //   不该为了对账把 AiAgent(以及它背后 2.5GB 的模型)建出来。
             AiAgentHolder.peek()?.checkToolDrift()
@@ -1253,6 +1284,12 @@ class TouchpadClient(context: Context) {
                                 val hand = try {
                                     HandCodec.fromDiscovery(obj, System.currentTimeMillis())
                                 } catch (_: Exception) { null }
+                                // ★★ **认识的第一个时机,而且它比「连上之后」更早**:
+                                //   发现应答里本来就带着这台电脑的身份(`hand.id`)。
+                                //   记下来之后,等会儿真去连它时就能**直接按身份读到免密凭证** ——
+                                //   即使这台电脑今天的 IP 和上次不一样(开热点就会变)。
+                                //   见 [rememberIdentity] 那段说明。
+                                if (hand != null) rememberIdentity(ip, hand.id)
                                 Log.i(TAG, "发现:$key(第 ${seen.size} 台)" +
                                         (hand?.let { ",名字「${it.name}」" } ?: ""))
                                 post { onFound(ip, port, hand) }
@@ -1301,7 +1338,7 @@ class TouchpadClient(context: Context) {
         prefs.edit().putString("secret_$ip", enc).apply()
     }
 
-    // ---- 免密 token 持久化(按电脑 IP,Keystore AES-GCM 加密;重启 App 后几分钟内仍免密自动连) ----
+    // ---- 免密 token 持久化(Keystore AES-GCM 加密;重启 App 后几分钟内仍免密自动连) ----
     // 「先解屏」:手机锁着时免密凭证一律视为不存在、不解密不用 —— 想免密连必须先解锁手机。
     private fun isDeviceLocked(): Boolean = try {
         (appContext.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager)
@@ -1310,19 +1347,94 @@ class TouchpadClient(context: Context) {
         false
     }
 
+    /** 「这台手机锁着没有」—— 给 [PcLink] / [AutoLinkMath] 那第六七条闸用。 */
+    fun isLockedNow(): Boolean = isDeviceLocked()
+
+    // ======================================================================
+    // ★★ 免密凭证**按「电脑是谁」存,不再按 IP 存**(用户 2026-10-08 定的第 ② 条)
+    // ======================================================================
+    //
+    // 病根:手机开热点的时候,电脑的地址会变(通常从 192.168.1.x 变成 192.168.43.x)。
+    // 而凭证原来是 `resume_192.168.1.7` 这么存的 —— 地址一变,**那个键就再也对不上任何东西**,
+    // 于是「明明配过对,它还是要我重新配」。而且它**永远不会自愈**:每次都是新 IP、每次都没凭证。
+    //
+    // 做法:**真正的键是电脑的身份**(`hand.id`,就是它的主机名),IP 只留一份「谁是谁」的映射。
+    //   `resume_<主机名>`         ← 凭证本体(加密)
+    //   `idof_<ip>`               ← 这台 ip 上次看到的是谁
+    //
+    // ★ 身份什么时候知道?**两个地方都能知道,而且第二个更早**:
+    //   ① 连上之后电脑回的 `hand`(HARR)—— 见 [registerHandFromReply];
+    //   ② ★★ **扫描时的发现应答里就带着它**(`HandCodec.fromDiscovery`)——
+    //      也就是说,「刚刚连上的这一台」和「下次扫描到的那一台」,
+    //      在**还没开始连**的时候就能对上号。见 [rememberIdentity] 的调用点。
+    //
+    // ★ 老数据怎么办:以前存在 `resume_<ip>` 下的那一份,**第一次认出身份时搬过去**
+    //   (见 [rememberIdentity] 里那段迁移),搬完删旧的。所以升级上来的手机
+    //   **不用重新配对一次**。读的时候两边都认(见 [loadResumeToken]),兜住搬之前那一刻。
+
+    private fun identityOf(ip: String): String? = prefs.getString(KEY_ID_OF + ip, null)
+
+    /** 记下「这个 ip 是谁」;顺带把旧的按 IP 存的那份凭证搬到身份键下。 */
+    private fun rememberIdentity(ip: String, id: String) {
+        if (ip.isBlank() || id.isBlank()) return
+        val prev = identityOf(ip)
+        if (prev == id) return
+        val ed = prefs.edit().putString(KEY_ID_OF + ip, id)
+        if (prev == null) {
+            // 第一次认出这台 ip 的身份:旧格式的凭证搬个家,免得升级后要重配一次。
+            prefs.getString("resume_$ip", null)?.let { legacy ->
+                ed.remove("resume_$ip").putString("resume_$id", legacy)
+            }
+        }
+        ed.apply()
+    }
+
+    /** 这台电脑有没有存下免密凭证 —— **给 [PcLink] 判「该不该自动拨」用**(第 ① 条闸)。 */
+    fun hasResumeCredentialFor(ip: String): Boolean {
+        identityOf(ip)?.let { if (prefs.contains("resume_$it")) return true }
+        return prefs.contains("resume_$ip")
+    }
+
+    // ---- 「上一次自动拨号是以『要输配对码』告终的」那个标记 ----
+    // 见 [AutoLinkMath] 里那段:光有「有没有凭证」那一闸**掐不断配对风暴**,
+    // 凭证存在但过期时照样会转到配对上去。真正拦得住的是这个**记在结果上的**标记。
+    // ★ 必须落盘:进程一重启就忘了的话,「退出去再进一次」又能把它刷起来。
+    /** 上一次自动拨号是不是撞上了配对(撞上了就别再自动拨)。 */
+    fun isAutoBlockedByPairing(): Boolean = prefs.getBoolean(KEY_AUTO_BLOCKED, false)
+
+    /** 自动拨号撞上配对码那一刻落下。见 [connect] 里 `PIN_REQUIRED` 那一处。 */
+    private fun markAutoBlocked() {
+        if (!prefs.getBoolean(KEY_AUTO_BLOCKED, false)) {
+            prefs.edit().putBoolean(KEY_AUTO_BLOCKED, true).apply()
+        }
+    }
+
+    /** 用户明确点着连 / 任何一次认证成功 —— 标记作废。 */
+    private fun clearAutoBlocked() {
+        if (prefs.getBoolean(KEY_AUTO_BLOCKED, false)) {
+            prefs.edit().putBoolean(KEY_AUTO_BLOCKED, false).apply()
+        }
+    }
+
     private fun loadResumeToken(ip: String): String? {
         if (isDeviceLocked()) return null   // 锁屏状态下不解密 → 只能走手动配对(配对种子不受此限)
-        val enc = prefs.getString("resume_$ip", null) ?: return null
+        // 按身份存的优先;没有就退回按 IP 存的那份(迁徙还没发生 / 老数据)
+        val byId = identityOf(ip)?.let { prefs.getString("resume_$it", null) }
+        val enc = byId ?: prefs.getString("resume_$ip", null) ?: return null
         return SecretCipher.decryptResume(enc)
     }
 
     private fun saveResumeToken(ip: String, token: String) {
         val enc = SecretCipher.encryptResume(token) ?: return
-        prefs.edit().putString("resume_$ip", enc).apply()
+        // 知道是谁就存身份键下;还不知道就先存 IP 键下,[rememberIdentity] 认出之后会搬家
+        val key = identityOf(ip) ?: ip
+        prefs.edit().putString("resume_$key", enc).apply()
     }
 
     private fun deleteStoredResume(ip: String) {
-        prefs.edit().remove("resume_$ip").apply()
+        val ed = prefs.edit().remove("resume_$ip")
+        identityOf(ip)?.let { ed.remove("resume_$it") }
+        ed.apply()
     }
 
     /** 等待队列里出现一个值;若连接被取消则立即返回 null。 */
@@ -1486,6 +1598,11 @@ class TouchpadClient(context: Context) {
         private const val HEARTBEAT_MS = 8000L   // 控制连接心跳间隔
         private const val RESUME_RETRY_MS = 1500L  // 续连重试间隔
         private const val MAX_RESUME_TRIES = 12    // 最多试 ~18 秒,还不行才上报断开
+
+        // ---- 「谁是谁」的映射键:ip → 电脑身份(见 [rememberIdentity]) ----
+        private const val KEY_ID_OF = "idof_"
+        // ---- 「上一次自动拨号落到了配对码」那个标记(见 [isAutoBlockedByPairing]) ----
+        private const val KEY_AUTO_BLOCKED = "auto_blocked_by_pairing"
 
         // ---- 二进制安全读:自定义按行/按长度读,避免 BufferedReader 预读进二进制帧 ----
         private fun writeLine(out: OutputStream, line: String) {

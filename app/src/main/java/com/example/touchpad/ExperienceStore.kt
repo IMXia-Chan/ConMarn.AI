@@ -54,16 +54,40 @@ object ExperienceStore {
      */
     val VERBS = listOf("scroll", "search", "visual")
 
-    private const val MAX_PER_KIND = 8      // 同一个 kind 下最多留几条,多了淘汰最低的
-    private const val MAX_VERBS = 4         // 一条策略最多几个动词,防止老师给一长串
+    /**
+     * 同一个 kind 下最多留几条,多了**淘汰**置信度最低的那条(平手时留老的)。
+     *
+     * ★★ 2026-10-08 从 `private` 改成 `internal`:记忆库那一页要**把这个数说出来**。
+     *   加第 9 条时它是**悄悄挤掉**一条旧的(不是拒收),这条规矩要是界面上不说,
+     *   他的感觉就是「我明明加了一条,怎么少了一条」—— 而他绝不会往这儿想。
+     *   [UserLexicon] 那几个上限做成 `internal` 是同一个理由(界面要报「最多记 3 个」)。
+     */
+    internal const val MAX_PER_KIND = 8
+
+    /**
+     * 一条做法最多几步。★ 和 [MAX_PER_KIND] 同一个理由做成 `internal`:
+     * 记忆库那一页要**拦住他点第五个**,并且把「最多 4 步」说出来。
+     *
+     * ★★ 不拦的后果是**静默截断** —— [parseVerbs] 末尾 `.take(MAX_VERBS)` 会一声不响地把
+     *   第五步以后丢掉,而他看到的是「存好了」,回到清单才发现少了两步。
+     */
+    internal const val MAX_VERBS = 4
 
     data class Exp(
         val kind: String,
         val verbs: List<String>,
         val reason: String,
-        val source: String,        // "seed" = 预置教材,"teacher" = 云端老师教的
+        // "seed" = 预置教材,"teacher" = 云端老师教的,"manual" = 他自己在记忆库里加的
+        val source: String,
         var uses: Int,
         var wins: Int,
+        /**
+         * ★★ 「这条别再要了」—— 2026-10-08 他点名要的(见 [setEnabled] 那段)。
+         *
+         * false = 这条**永远不用**,而且老师**再教同样一条也不收**。
+         * ★ **带默认值加在末尾**:测试里已经有六参的位置构造,加第七个默认参数不会弄红。
+         */
+        var enabled: Boolean = true,
     ) {
         /** 置信度 = 用出来的胜率(拉普拉斯平滑)。只影响顺序,不影响安全边界。 */
         val confidence: Double get() = (wins + 1.0) / (uses + 2.0)
@@ -78,6 +102,7 @@ object ExperienceStore {
             .put("source", source)
             .put("uses", uses)
             .put("wins", wins)
+            .put("enabled", enabled)
     }
 
     private var file: File? = null
@@ -92,13 +117,24 @@ object ExperienceStore {
         file = f
         synchronized(this) {
             items.clear()
-            val loaded = try {
-                if (f.exists()) parse(f.readText(Charsets.UTF_8)) else emptyList()
+            // ★★ 「删空 = 真的空」。 2026-10-08 他要在设置里能把经验库清干净。
+            //
+            //   原来这里写的是 `if (loaded.isEmpty()) 播种`,用的是**列表空不空**这个判据 ——
+            //   于是他把条目一条条删光、下次一开机**那三条预置教材又自己冒出来**,
+            //   而且不报任何错。他删的东西自己回来了,这正是他最恨的那种失败。
+            //
+            //   判据改成「**盘上有没有这份文件**」,两种情况分开:
+            //     · 没有文件(刚装 / 刚清过 App 数据) → 播种。这是预置教材的本意。
+            //     · 有文件、解析出来是空的        → 那就是他一条条删出来的,保持空。
+            //     · 文件坏了(读/解析抛异常)      → **照旧播种** —— 那种情况下他并没有删过
+            //       任何东西,而「坏文件退回预置教材」是原来就定下的规矩,别顺手改掉。
+            //   ★ 注意 `null` 和 `emptyList()` 在这儿的区别**就是整个判据**,别把两者合并。
+            val loaded: List<Exp>? = try {
+                if (f.exists()) parse(f.readText(Charsets.UTF_8)) else null
             } catch (_: Exception) {
-                // 文件坏了不能把功能一起带走 —— 退回家底(预置教材),下次写回去就修好了。
-                emptyList()
+                null
             }
-            if (loaded.isEmpty()) {
+            if (loaded == null) {
                 items.addAll(seed())
                 save()
             } else {
@@ -152,33 +188,42 @@ object ExperienceStore {
      */
     @Synchronized
     fun candidates(kind: String): List<Exp> =
-        items.filter { it.kind == kind }
+        items.filter { it.kind == kind && it.enabled }
             .sortedWith(compareByDescending<Exp> { it.confidence }.thenByDescending { it.uses })
 
-    /** 这个 kind 有没有经验可查(没有就得去问老师)。 */
+    /**
+     * 这个 kind 有没有经验可查(没有就得去问老师)。
+     *
+     * ★ 「被禁的那条不算有」—— 他按了「别再要了」之后,这个 kind 就该重新去问老师,
+     * 而不是拿一条他明说不许用的打头。
+     */
     @Synchronized
-    fun has(kind: String): Boolean = items.any { it.kind == kind }
+    fun has(kind: String): Boolean = items.any { it.kind == kind && it.enabled }
 
     /**
      * 老师教了一条。动词先过封闭集合这一关,出了圈的直接丢 —— 不能因为
      * 「是老师说的」就让它指挥代码干没见过的事。
      *
      * 已经有同一套动词序列就**不新增**,返回那条老的(反复教只会把它用起来)。
+     *
+     * ★★ 但**被他禁掉的那条是例外**:返回 null = **不收**。
+     *   不然「老师教错了 → 他按『别再要了』→ 老师下次又说同样的话 → 它自己回来了」,
+     *   而他不会知道是哪天回来的(见 [setEnabled])。
      */
     @Synchronized
-    fun learn(kind: String, rawVerbs: List<String>, reason: String): Exp? {
-        val verbs = rawVerbs.map { it.trim().lowercase() }
-            .filter { it in VERBS }
-            .distinct()
-            .take(MAX_VERBS)
-        if (verbs.isEmpty()) return null
+    fun learn(kind: String, rawVerbs: List<String>, reason: String,
+              source: String = "teacher"): Exp? {
+        val verbs = normVerbs(rawVerbs) ?: return null
 
-        items.firstOrNull { it.kind == kind && it.id == verbs.joinToString(">") }?.let { return it }
+        items.firstOrNull { it.kind == kind && it.id == verbs.joinToString(">") }?.let {
+            return if (it.enabled) it else null
+        }
 
-        val e = Exp(kind, verbs, reason, "teacher", 0, 0)
+        val e = Exp(kind, verbs, reason, source, 0, 0)
         items.add(e)
         // 同 kind 太多了就淘汰置信度最低的那条(平手时留老的 —— 它至少有使用记录)。
-        items.filter { it.kind == kind }
+        // ★ 只从**没被禁**的那些里挑:「别再要了」是按在他手上的,不参与自动淘汰。
+        items.filter { it.kind == kind && it.enabled }
             .sortedWith(compareBy<Exp> { it.confidence }.thenBy { it.uses })
             .dropLast(MAX_PER_KIND)
             .forEach { items.remove(it) }
@@ -202,8 +247,11 @@ object ExperienceStore {
     fun summary(): String {
         if (items.isEmpty()) return "还没有经验"
         val taught = items.count { it.source == "teacher" }
-        val best = items.maxByOrNull { it.confidence } ?: return "还没有经验"
-        return "${items.size} 条(老师教了 $taught 条)," +
+        val off = items.count { !it.enabled }
+        val tail = if (off > 0) ",${off} 条你别再要了" else ""
+        val best = items.filter { it.enabled }.maxByOrNull { it.confidence }
+            ?: return "${items.size} 条全部都被你设成「别再要了」$tail"
+        return "${items.size} 条(老师教了 $taught 条$tail)," +
             "最信得过的是「${best.kind}」→ ${best.verbs.joinToString(" → ")}" +
             "(%.0f%%,用过 ${best.uses} 次)".format(best.confidence * 100)
     }
@@ -211,6 +259,127 @@ object ExperienceStore {
     /** 全部条目,给设置界面列出明细。 */
     @Synchronized
     fun all(): List<Exp> = items.toList()
+
+    // ------------------------------------------------------------------
+    // ★★ 记忆库那一页要用的:看 / 删 / 改 / 加 / 禁(2026-10-08 他点名要的)
+    //
+    //   他原话大意:「我就能在她出现 bug、错误的时候教她」/「云端老师教错了,那我该咋办」。
+    //   所以这几件的形状不是为了"管理数据",是为了**出错之后他能把那个错纠正掉** ——
+    //   每一条的注释里都写清了它治的是哪种"她不听话"。一次只动一处,每件都能单独回退。
+    // ------------------------------------------------------------------
+
+    /**
+     * 「这条别再要了」/「让它回来」。
+     *
+     * ★★ 为什么光「删掉」不够 —— 这是这一整套里最要紧的一句:
+     *   删掉只是**这一份**没了。下次她碰上同样的界面,还是要去问云端老师;
+     *   老师要是又说一遍同样的话,**它原样回来**,而且看不出是哪天回来的。
+     *   禁掉 = 留着这条的记号,但**永不用它、也不许再教回来**。
+     *   这条正是「老师教错了」的正解,删掉不是。
+     */
+    @Synchronized
+    fun setEnabled(e: Exp, on: Boolean) {
+        e.enabled = on
+        save()
+    }
+
+    /** 删掉一条。★ 删了就真没了 —— [init] 不会再播种(见那里的注释)。 */
+    @Synchronized
+    fun remove(e: Exp): Boolean {
+        val gone = items.remove(e)
+        if (gone) save()
+        return gone
+    }
+
+    /** 清空整个经验库。★ **清空之后不会自己长回来** —— 见 [init]。 */
+    @Synchronized
+    fun purge() {
+        items.clear()
+        save()
+    }
+
+    /**
+     * 他亲手加的一条。和老师教的走**同一条路**(一样过封闭集合、一样去重、一样有上限),
+     * 只是 source 记成 "manual" —— 这样以后看清单能分清"哪几条是我自己写的"。
+     */
+    fun add(kind: String, rawVerbs: String, reason: String): Exp? {
+        val k = kind.trim()
+        if (k.isEmpty()) return null
+        val verbs = parseVerbs(rawVerbs) ?: return null
+        return learn(k, verbs, reason, "manual")
+    }
+
+    /**
+     * 改一条:动词链 + 理由。
+     *
+     * ★ 动词链是它的**身份**(见 [Exp.id])—— 改了链就等于换了一条,
+     *   所以这是「替换这条」而不是「给它改个名」。使用记录(用过几次、成几次)原样跟着走:
+     *   他改的是"该怎么做",不是"以前做得怎么样"。
+     * ★ 新链要是和同 kind 下另一条撞了,**把撞的那条去掉**(两条一模一样的东西
+     *   留着只会让清单变长,而且下次淘汰时它俩互相顶)。
+     */
+    @Synchronized
+    fun update(e: Exp, rawVerbs: String, reason: String): Exp? {
+        val verbs = parseVerbs(rawVerbs) ?: return null
+        val i = items.indexOf(e)
+        if (i < 0) return null
+        val fresh = e.copy(verbs = verbs, reason = reason)
+        items.firstOrNull { it !== e && it.kind == e.kind && it.id == fresh.id }
+            ?.let { items.remove(it) }
+        items[items.indexOf(e)] = fresh
+        save()
+        return fresh
+    }
+
+    /**
+     * 这个 kind 下,**老师给过的那条**是不是被他设成「别再要了」了。
+     *
+     * ★ 它挡的是一趟**没必要花的云端调用**:老师是照「观察」教的,同样的观察就会教出
+     *   同样一条;那条既然他不要,再去问一遍 = 花一次钱、再原样拒一次。
+     * ★ 只看 `source == "teacher"` 的那些 —— **把预置教材禁掉不代表老师那条不要**,
+     *   那种时候该照旧去问(可能是真的没别的办法了)。
+     */
+    @Synchronized
+    fun teacherMuted(kind: String): Boolean =
+        items.any { it.kind == kind && it.source == "teacher" && !it.enabled }
+
+    /**
+     * 这套动词链是不是**已经被他设成「别再要了」**。
+     *
+     * ★ 用处只有一个、但必须有:老师又教了一遍被禁的做法时,[learn] 会返回 null,
+     *   而 null 也可能是「动词不在允许范围内」—— 那两句话**必须分开说**,
+     *   否则回执会把「你不让它学」说成「老师教错了」。同一件事说错,比不说更坏。
+     */
+    @Synchronized
+    fun isMuted(kind: String, rawVerbs: List<String>): Boolean {
+        val id = normVerbs(rawVerbs)?.joinToString(">") ?: return false
+        return items.any { it.kind == kind && it.id == id && !it.enabled }
+    }
+
+    /** 归一化一条动词链(小写 / 裁剪 / 过封闭集合 / 去重 / 限长)。空 ⇒ null。 */
+    private fun normVerbs(raw: List<String>): List<String>? {
+        val verbs = raw.map { it.trim().lowercase() }
+            .filter { it in VERBS }
+            .distinct()
+            .take(MAX_VERBS)
+        return verbs.ifEmpty { null }
+    }
+
+    /**
+     * 把人打的那串动词拆成一条链。**有一个词不认就整体返回 null** ——
+     * 不静默丢掉再照跑:否则他打了「search 关机」会得到一条只有 search 的经验,
+     * 而他以为「关机」也进去了。**这个项目最恨的就是这种失败。**
+     *
+     * ★ 纯函数(不碰盘、不碰 items),所以 JVM 单测能直接钉它两个方向。
+     */
+    internal fun parseVerbs(raw: String): List<String>? {
+        val parts = raw.split(' ', '\t', '\n', ',', '，', '、', '>', '→', '|')
+            .map { it.trim().lowercase() }
+            .filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return null
+        if (parts.any { it !in VERBS }) return null
+        return parts.distinct().take(MAX_VERBS)
+    }
 
     // ------------------------------------------------------------------
 
@@ -235,6 +404,9 @@ object ExperienceStore {
                     o.optString("reason"), o.optString("source", "teacher"),
                     o.optInt("uses", 0).coerceAtLeast(0),
                     o.optInt("wins", 0).coerceAtLeast(0),
+                    // ★ 缺这一格的老文件读出来是 true(没禁过)—— optBoolean 的默认值
+                    //   就是为「老盘上的文件没有这个字段」准备的,别改成 false。
+                    o.optBoolean("enabled", true),
                 )
             )
         }

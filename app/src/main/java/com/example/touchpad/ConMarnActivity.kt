@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
@@ -343,6 +344,51 @@ class ConMarnActivity : Activity() {
     private lateinit var topBar: LinearLayout
     private lateinit var bottomBar: LinearLayout
 
+    /**
+     * ★★ 挑动作那一栏(2026-10-09)—— 房间主页**最右侧**,能上下滑。
+     *
+     *   用户原话:「**在她房间的主页(不是设置)最右侧加上可以上下滑动的挑选动作的栏**」。
+     *
+     *   ★ 为什么是「栏」不是「一页」:挑动作是**看着她的身体挑**的事 ——
+     *     躲进 ⚙ 里点三层才能换一条,那是设置;摆在房间里点一下就换、当场看得见,
+     *     那才是「挑」。所以它**住在房间里、不进 ⚙**(和顶栏同一条理由,
+     *     见 [buildTopBar] 末尾那段)。
+     *   ★ 2026-10-09 晚它变成**可收起**的(见 [motionPickerOpen]):收起时只剩顶上
+     *     「动作」那一条,点它才铺满、点房间空处又收回去 —— 见 [setMotionPickerOpen]。
+     *
+     *   ⚠️ **它确实会吃掉右缘那一条的 WebGL 触摸** —— 这正是当初书签条被藏起来的原因
+     *     (见 [scanBtn] 那段)。他点名要它、也点名要在最右侧,所以这一条是**他选的代价**;
+     *     能做的只有把它做窄(见 [MOTION_PICKER_W])。真挡住房间里哪件东西了,是他会先看出来的。
+     *     ★ 可收起**顺带把这笔代价压小了**:收着的时候右缘只剩顶上那一条玻璃。
+     */
+    private var motionPicker: LinearLayout? = null
+
+    /** 那一栏里的行:`rel` → 那一行的按钮。换完动作要照它重刷高亮,见 [refreshMotionPicker]。 */
+    private val motionRows = LinkedHashMap<String, Button>()
+
+    /**
+     * 那一栏的**外框**与里面的**滚动区**。
+     *
+     * ★ 它们本来是 [buildMotionPicker] 里的局部变量 —— 要能收起来就必须留住。
+     *   因为「收起来」要动的是**两个**视图:`motionPickerScroll` 得藏掉,
+     *   `motionPickerWrap` 的高度得从 `MATCH_PARENT` 换成 `WRAP_CONTENT`。
+     */
+    private var motionPickerWrap: LinearLayout? = null
+    private var motionPickerScroll: ScrollView? = null
+
+    /** 顶上那一条 —— 它既是标题,也是**开关**(点它展开 / 收起)。 */
+    private var motionPickerHead: TextView? = null
+
+    /**
+     * 现在是铺满着,还是收成顶上一条。
+     *
+     * ★★ **默认收着。** 用户原话:「**点一下往下展开,再点屏幕其他地方,又缩回去的**」——
+     *   「点一下**才**展开」就是把「收起」当成常态;而且收着的时候右缘被吃掉的
+     *   WebGL 触摸只剩那一条(见 [motionPicker] 那笔代价)。要改成默认铺满,
+     *   把这里的初值换成 `true` 就行,别处一个字不用动。
+     */
+    private var motionPickerOpen = false
+
     // ★★ 这里原来有一整套「控件显隐」:一个 `controlsShown` 开关、一个六秒自动收起的
     //   定时器 `hideControls`、以及 `setControls` / `toggleControls` / `keepControlsAlive`
     //   三个函数,还有散布在打字、收听、发消息那几处的 `keepControlsAlive()`。
@@ -606,6 +652,7 @@ class ConMarnActivity : Activity() {
         // ── 第三层:控件(默认隐藏) ──────────────────────────────────
         buildTopBar()
         buildBottomBar()
+        buildMotionPicker()
         // ★ 那颗圆按钮建出来时**默认**就是「发送」(三个忙的标志都还没置位),
         //   这里只是把话说明白:它的长相**只有一个来源**([refreshSendBtn]),
         //   别处谁也别去写 `sendBtn.text`。两口子各写一半的那种 bug 长这样:
@@ -756,8 +803,55 @@ class ConMarnActivity : Activity() {
             path.endsWith(".vrm") -> "model/gltf-binary"
             path.endsWith(".glb") -> "model/gltf-binary"
             path.endsWith(".gltf") -> "model/gltf+json"
+            // ★ 2026-10-08:她的动作(.vrma)。它和 .glb 一样是个 glTF 二进制容器
+            //   (里面装的是骨骼每一帧转到哪),GLTFLoader 不看 MIME,
+            //   但**给对更省事** —— 掉到 octet-stream 去,认不认全看浏览器心情,
+            //   要静默就静默在这儿。纯加行,不改任何一条已有分支。
+            path.endsWith(".vrma") -> "model/gltf-binary"
             path.endsWith(".bin") -> "application/octet-stream"
             else -> "application/octet-stream"
+        }
+
+        // ★★ 挑动作 —— 他自己从**库**里点名的那一条(2026-10-09)。
+        //
+        //   库里的文件**不在 APK 里、也不在 `motion/` 里** —— 它在
+        //   `files/motion-library/` 下面。页面要拿到它,只能走这条专门开的路:
+        //   地址前缀 `her/motion-lib/`,后面跟的**就是**库里那份相对路径。
+        //
+        //   ★★ 它必须排在下面 [Wardrobe.resolve] **之前**。`resolve` 是按**扩展名**
+        //     分派的(`.vrma` → `motion/`),而库里的东西压根不在 `motion/` 里 ——
+        //     让它去判必然落空,然后掉到 `assets.open`,结果是一条**静默的 404**,
+        //     症状正是「她不动,一个字都不报」。这一条要先把它截住。
+        //
+        //   ★ 判定全在 [Wardrobe.motionFile] 里(路径白名单 + 扩展名白名单 + 库根包含,
+        //     三道都是纯逻辑、都有单测)。这里只负责「问一句、写一行日志」。
+        if (path.startsWith(LIB_PREFIX)) {
+            val rel = path.removePrefix(LIB_PREFIX)
+            val f = try {
+                Wardrobe.motionFile(this, rel)
+            } catch (e: Exception) {
+                ModelManager.get(this).trace(
+                    "动作库:读 $rel 出错(${e.javaClass.simpleName}: ${e.message})")
+                null
+            }
+            if (f != null) {
+                ModelManager.get(this).trace("动作库:页面取用 $rel(${f.length()} 字节)")
+                return try {
+                    WebResourceResponse(mime, null, f.inputStream()).apply {
+                        setStatusCodeAndReasonPhrase(200, "OK")
+                    }.also { Log.i(TAG, "动作库: $url -> ${f.absolutePath} (${f.length()} 字节)") }
+                } catch (e: Exception) {
+                    // 说好要给它这份、却打不开 —— 原因**必须留下**(不许静默)。
+                    ModelManager.get(this).trace(
+                        "动作库:$rel 打不开(${e.javaClass.simpleName}: ${e.message})")
+                    null
+                }
+            }
+            // ★★ **读不到也要留一行**。这一格要是静默,它和「你压根没挑过」
+            //   在她那边长得一模一样 —— 而它其实有三种来源(白名单挡了 / 文件没了 /
+            //   是坏文件),日志是唯一分得开它们的东西。
+            ModelManager.get(this).trace("动作库:页面要的 $rel 读不到(挡了 / 不在 / 是坏的)")
+            return null
         }
 
         // ★★ 换装 —— 「放文件就生效」的**全部机制就是这十几行**。
@@ -825,6 +919,10 @@ class ConMarnActivity : Activity() {
             // ★ 再摆房间里的东西。放最后:她先站好,东西再出现,
             //   而不是物件先浮在空中等她。
             pushRoomObjects()
+            // ★ 然后是**她自己的动作**(他丢进 motion/ 的 .vrma,可以有可以没有)。
+            //   排在摆东西**后面**是刻意的:动作要等她站好、房间摆好再套上去,
+            //   而且它是**我们主动推**的(见 [pushMotion] 的 KDoc)。
+            pushMotion()
             // ★ 最后给她拍一张,给悬浮窗当「人形」。**晚一拍**是刻意的 ——
             //   见 [captureFigure] 的说明。重复进房间都拍,但内容一样就不落盘。
             root.removeCallbacks(figureShot)
@@ -862,16 +960,24 @@ class ConMarnActivity : Activity() {
         fun onObjectTapped(id: String) = runOnUiThread { objectTapped(id) }
 
         /**
-         * 点了房间里的空处。**今天什么都不做,这是有意的。**
+         * 点了房间里的空处 —— **把挑动作那一栏收回去**。
          *
-         * ★ 它以前是 `toggleControls()` —— 点空处把工具日志翻出来。
-         *   2026-10-04 晚那块日志被删了,所以这条路**故意留空**,不是漏了。
-         * ★ 回调本身**保留**:JS 那边照旧会喊它,留着它的成本是零,
-         *   而删掉它会让 `her.js` 和这边对不上(一次「调了个不存在的接口」,
-         *   症状是控制台一条看不懂的错)。以后想让空处有反应,写在这儿。
+         * ★ 它以前是 `toggleControls()` —— 点空处把工具日志翻出来。2026-10-04 晚那块
+         *   日志被删了,这条路于是空了一段(当时那句「故意留空」写的就是那阵子)。
+         * ★ 2026-10-09 晚它有了新差事。用户原话:「**点一下往下展开,再点屏幕其他地方,
+         *   又缩回去的**」—— 后半句就是它。
+         *
+         * ★★ 这一件事**只能挂在它身上**,别处都挂不了:那张盖在房间上的透明纸
+         *   (`overlay`)**不能**挂 `OnClickListener` —— 一挂上它 `clickable` 就永远是
+         *   `true`,她就再也点不着房间里的东西了(见 [setOverlayEatsTouches] 那段)。
+         *   而 JS 那边点空处**本来就会喊这一声**(已在 `her.bundle.js` 里核实
+         *   `HerBridge.onEmptyTapped` 有调用方),所以这是白捡的一条路。
+         *
+         * ★ 必须 `runOnUiThread`:喊过来的是 JS 的线程,碰视图只能在主线程。
+         *   (同 [onObjectTapped] / [onReady] 的写法。)
          */
         @JavascriptInterface
-        fun onEmptyTapped() = Unit
+        fun onEmptyTapped() = runOnUiThread { setMotionPickerOpen(false) }
     }
 
     /**
@@ -1283,6 +1389,230 @@ class ConMarnActivity : Activity() {
         // ★ **永远不置 GONE**。字幕住在这条 bar 里,bar 一隐,字幕就永远弹不出来 ——
         //   「只要出现字幕就是在页面上显示」是他 2026-10-04 点名的。
         //   这条 bar 里现在只有那块玻璃胶囊,它是**常驻**的。
+    }
+
+    // ------------------------------------------------------------------
+    // 挑动作那一栏(2026-10-09)
+    // ------------------------------------------------------------------
+
+    /**
+     * 房间里**最右侧**那一栏:能上下滑,点一下就换她正在做的动作。
+     *
+     * 用户原话(2026-10-09):
+     * > 「在她房间的主页(**不是设置**)最右侧加上可以**上下滑动**的挑选动作的栏,直接这么干」
+     *
+     * ★★ 形状是被他这句话**三项锁死**的,别自作主张:
+     *   ① **在主页,不在设置里** —— 挑动作是**看着她的身体挑**的事。
+     *      躲进 ⚙ 点三层才能换一条,那是「配置」;摆在房间里点一下当场看得见,那才是「挑」。
+     *      所以它**住在房间里、不进 ⚙**(和顶栏同一条理由,见 [buildTopBar] 末尾)。
+     *   ② **最右侧** —— `Gravity.END`。
+     *   ③ **能上下滑** —— 31 条动作一屏放不下,`ScrollView`。
+     *
+     * ★ 2026-10-09 晚他又加了一条:**可收起** ——
+     *   「点一下往下展开,再点屏幕其他地方,又缩回去的」。收起时只剩顶上「动作」那一条
+     *   (点它展开、点房间空处收起),见 [setMotionPickerOpen]。
+     *
+     * ⚠️ **它确实会吃掉右缘那一条的 WebGL 触摸** —— 这正是当初那条书签条被藏起来的原因
+     *    (见 [scanBtn] 的 KDoc)。他点名要它、也点名要在最右侧,所以这一条是**他选的代价**;
+     *    能做的只有把它做窄(见 [MOTION_PICKER_W])。真挡住房间里哪件东西了,他会先看出来的。
+     *
+     * ★ **一行按钮的清单来自 [Wardrobe.listMotions]**(磁盘上真有的那些),
+     *   **不是写死的一串名字** —— 他以后往库里丢新文件,这一栏自己会长出来。
+     *   第一行永远是「默认」= 不挑、用 `motion/` 那套(见 [MOTION_ROW_DEFAULT]),
+     *   所以**挑过的能退回来**。
+     */
+    private fun buildMotionPicker() {
+        val head = TextView(this).apply {
+            text = "动作"
+            textSize = 11f
+            setTextColor(0xFFE05B8E.toInt())
+            gravity = Gravity.CENTER
+            maxLines = 1
+            // ★ 上下各留 9dp:收起时**整栏就只剩这一条**,它得是一块点得着的把手,
+            //   不能是一条 11sp 高的细线。(展开时它也顺带成了标题的那点呼吸。)
+            setPadding(0, dp(9), 0, dp(9))
+            // ★★★ 它**就是**开关本身 —— 点它展开 / 收起(见 [setMotionPickerOpen])。
+            //   `setOnClickListener` 会把它置成 clickable,这正是这里要的:
+            //   它是个按钮,不是装饰。(**别**照这一行去给 `overlay` 挂监听 ——
+            //   那张透明纸的 clickable 是「让不让路」的开关,见 [setOverlayEatsTouches]。)
+            setOnClickListener { setMotionPickerOpen(!motionPickerOpen) }
+        }
+
+        // ★ 这一格**就是**那一栏里的行容器(见 [motionPicker] 的字段声明)。
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        val sv = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            // ★ 到头了不许再「弹一下」:那一格本来就是 WebGL 的地方,
+            //   别再多吃一份过卷的手势。
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(col, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                // 约三成五黑:字看得清,后面她的身体也还透得出来 —— 它是**玻璃**,不是挡板。
+                setColor(0x59120D10)
+                setStroke(dp(1), 0x40E05B8E)
+            }
+            setPadding(dp(5), dp(6), dp(5), dp(6))
+        }
+        wrap.addView(head, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        // ★ 高度给 0 + weight 1:让滚动区**吃掉剩下的全部**,
+        //   而整栏的外框仍然是 MATCH_PARENT —— 内容多长都不会把它撑破。
+        wrap.addView(sv, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+
+        root.addView(wrap, FrameLayout.LayoutParams(
+            dp(MOTION_PICKER_W), ViewGroup.LayoutParams.MATCH_PARENT
+        ).apply {
+            gravity = Gravity.END
+            // 让开顶栏和底下那块字幕胶囊(它们各自常驻,见两处 KDoc)。
+            topMargin = dp(52)
+            bottomMargin = dp(96)
+            marginEnd = dp(4)
+        })
+
+        motionPicker = col
+        motionPickerWrap = wrap
+        motionPickerScroll = sv
+        motionPickerHead = head
+        refreshMotionPicker()
+        // ★ 摆完**立刻**按当前状态收一次。默认是收着的(见 [motionPickerOpen]),
+        //   所以这一句就是「进门时只剩顶上那一条」的全部实现 ——
+        //   不靠「先画成铺满、下一帧再收」,那样会闪一下。
+        applyMotionPickerState()
+    }
+
+    /**
+     * 把那一栏摆成「铺满」或「收成一条」的样子。
+     *
+     * ★★ **两件事必须一起做**,只做一件都不行:
+     *
+     *   * 只把滚动区藏掉(`GONE`)→ 外框还是 `MATCH_PARENT` 全高,右边仍然立着
+     *     一整条**看不见的玻璃**,照样把 WebGL 的触摸吃掉 —— 而且你看着是收起来了,
+     *     这种「收了但还在挡」是最难查的一种;
+     *   * 只把高度换成 `WRAP_CONTENT` → 滚动区照样画,内容被裁成顶上第一行,看着像坏了。
+     *
+     * ★ 状态没变就直接返回:`onEmptyTapped` 会从她那边**频繁**喊过来
+     *   (你每点一次房间空处就一次),每次都 `requestLayout` 是白花钱。
+     *
+     * ★ 箭头只说**点了会怎么样**,不描述现在是什么样:
+     *   收着时是「动作 ▼」(点了往下展开),铺满时是「动作 ▲」(点了收起来)。
+     *   ★★ 这两个符号是**读过了字体表才敢用**的(`adb pull` 下来用 fontTools 读 cmap):
+     *     `▼` U+25BC 和 `▲` U+25B2 在 NotoSansSymbols 子集**和** Noto CJK 全部 5 个
+     *     face 里都有 —— 两个独立的提供方,和已经在用的 `←` / `↓` 同一档安全。
+     *     (更小巧的 `▾` U+25BE **只有符号子集一个提供方**,所以没用它。)
+     */
+    private fun setMotionPickerOpen(open: Boolean) {
+        if (open == motionPickerOpen) return
+        motionPickerOpen = open
+        applyMotionPickerState()
+        // ★ 留一行日志,理由和 [setOverlayEatsTouches] 那条一样:这一路失效的样子是
+        //   「点了没反应」,和「点错地方了」长得一模一样 —— 没有日志就只能靠猜。
+        //   ★ 只在**真的翻了**的时候写(上面那个 return 挡着),所以不会刷屏。
+        ModelManager.get(this).trace("房间:动作栏${if (open) "展开" else "收起"}")
+    }
+
+    private fun applyMotionPickerState() {
+        val wrap = motionPickerWrap ?: return
+        val sv = motionPickerScroll ?: return
+
+        sv.visibility = if (motionPickerOpen) View.VISIBLE else View.GONE
+        (wrap.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+            lp.height = if (motionPickerOpen) {
+                ViewGroup.LayoutParams.MATCH_PARENT
+            } else {
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            }
+            wrap.layoutParams = lp
+        }
+        motionPickerHead?.text = if (motionPickerOpen) "动作 ▲" else "动作 ▼"
+        wrap.requestLayout()
+    }
+
+    /**
+     * 照磁盘上真有的动作,**重铺**那一栏,并把当前生效的那条点亮。
+     *
+     * ★ 每次点完都要重刷(不只是第一次)—— 点亮的那个是**他挑的那条**,
+     *   所以刷新的判据是 [Wardrobe.chosenMotion],不是「谁排第一」。
+     *
+     * ★★ **坏文件必须说出来,不许静默藏掉**:库是个他随时会往里丢文件的目录,
+     *   半截下载 / 写到一半断电都会留下 0 字节的文件。只把好的那一半摆出来、
+     *   另外半个一个字不说 —— 他看到的就是「我明明放进去了,这一栏里没有」。
+     *   所以 [Wardrobe.MotionList.skipped] 一律写进日志。
+     */
+    private fun refreshMotionPicker() {
+        val col = motionPicker ?: return
+        col.removeAllViews()
+        motionRows.clear()
+
+        val list = try {
+            Wardrobe.listMotions(this)
+        } catch (e: Exception) {
+            ModelManager.get(this).trace(
+                "动作库:列目录出错(${e.javaClass.simpleName}: ${e.message})")
+            null
+        }
+        if (list != null && list.skipped.isNotEmpty()) {
+            // ★ 这一行是「我放进去了它怎么没出现」唯一的分界线。
+            ModelManager.get(this).trace(
+                "动作库:跳过 ${list.skipped.size} 个用不了的 —— ${list.skipped.joinToString("、")}")
+        }
+
+        // ★ 第一行永远是「默认」:不挑 = 用 `motion/` 那套。**挑过的能退回来。**
+        addMotionRow(col, MOTION_ROW_DEFAULT, "默认")
+        for (m in list?.usable.orEmpty()) addMotionRow(col, m.rel, m.label)
+
+        // ── 点亮当前生效的那条 ──────────────────────────────────────
+        // ★ 挑的那条**文件没了**时(删了 / 改名了),它就不在 [motionRows] 里 ——
+        //   那时光点回「默认」。她在那边其实已经**回退到 motion/ 那套**了
+        //   (见 [Wardrobe.activeMotion]),所以「默认」亮着是**说实话**;
+        //   而那条退回的说明已经由 pushMotion 写进日志了。
+        val want = try { Wardrobe.chosenMotion(this) } catch (e: Exception) { null }
+        val on = if (want != null && motionRows.containsKey(want)) want else MOTION_ROW_DEFAULT
+        for ((rel, b) in motionRows) {
+            val lit = rel == on
+            b.background = getDrawable(if (lit) R.drawable.btn_her_primary else R.drawable.btn_her)
+            b.setTextColor(if (lit) 0xFF120D10.toInt() else 0xFFF2F3F5.toInt())
+        }
+    }
+
+    /** 那一栏里的一行。[rel] 是空串时表示「默认」(见 [MOTION_ROW_DEFAULT])。 */
+    private fun addMotionRow(col: LinearLayout, rel: String, label: String) {
+        val b = herButton(label, 11f, R.drawable.btn_her, 0xFFF2F3F5.toInt()) {
+            onMotionPicked(rel)
+        }.apply { ellipsize = android.text.TextUtils.TruncateAt.END }
+        col.addView(b, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(32)
+        ).apply { bottomMargin = dp(4) })
+        motionRows[rel] = b
+    }
+
+    /**
+     * 他点了某一条 —— **当场换**,不重开房间、不重启她。
+     *
+     * ★ 为什么不用重进房间:[Her.setMotion](her.js) 自己就会把上一条 `stop()` 掉再装新的,
+     *   它是可重入的。所以这里只要「记住 + 推一次」,她**下一帧**就换过来了 ——
+     *   这正是「看着她的身体挑」这件事成立的全部前提。
+     *
+     * ★ [rel] 是空串 = 退回默认:把挑过的那条**忘掉**(存 null),`motion/` 那套重新生效。
+     *   ★ 这里**只是忘掉一个偏好**,不动任何文件 —— 「删任何东西前先问」那条规矩在这条路上
+     *     天然成立:`motion/` 里那个文件**一个字节都不碰**(见 [Wardrobe.activeMotion])。
+     */
+    private fun onMotionPicked(rel: String) {
+        try {
+            Wardrobe.setChosenMotion(this, rel.ifEmpty { null })
+        } catch (e: Exception) {
+            ModelManager.get(this).trace(
+                "动作库:记下选择出错(${e.javaClass.simpleName}: ${e.message})")
+        }
+        refreshMotionPicker()
+        pushMotion()
     }
 
     // ==================================================================
@@ -4096,6 +4426,24 @@ class ConMarnActivity : Activity() {
      */
     private fun canPostNotifications(): Boolean = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
+    /**
+     * 云端兜底的开关。**只拨开关,不碰 key** —— 这正是它和「把 key 删空」的区别:
+     * 关掉之后想再开,拨回来就行,不用把那个 key 找回来重填一遍。
+     *
+     * ★ 改完**必须落盘**([AiAgent.saveConfig])。`agent().config` 是内存里那一份的**引用**,
+     *   改它当场就生效 —— 但也**只**在这一个进程里生效。不落盘的话关掉 App 再打开,
+     *   它自己就回来了,而那个症状**看起来像「我没动过」**(同 `ProactiveGreeting` 那笔
+     *   「粉笔写的牌子」的账)。
+     *
+     * ★ 不重启任何东西:[AiAgent.chat] 每一轮都现读 `config.cloudOn`,下一句话就按新状态走。
+     */
+    private fun toggleCloud() {
+        val c = agent().config
+        c.cloudOn = !c.cloudOn
+        AiAgent.saveConfig(this, c)
+        toast(if (c.cloudOn) "云端兜底:开" else "云端兜底:关 —— 一个字节都不出手机了")
+    }
+
     /** ⚙ 里的一行:大字标题 + 小字说明,整行可点。 */
     private fun settingRow(title: String, sub: String, onClick: () -> Unit): LinearLayout {
         val box = LinearLayout(this).apply {
@@ -4149,6 +4497,18 @@ class ConMarnActivity : Activity() {
         //     再挂一行「她」会变成「她 / 她」,谁也看不出那行是干什么的。
         val herRow = settingRow("她的性格", "", { showHerPanel() })
 
+        // ── 记忆库(2026-10-08)──
+        //
+        //   他的名字就叫「**记忆库**」(「再在房间设置里,多加一条,记忆库?」),所以这一行
+        //   照他的原话写。但**它底装着两样东西**,进去看得见:
+        //     · 经验库 —— 她「碰上麻烦先按什么顺序试」的做法(★ 大半是**云端老师**教的);
+        //     · 长期记忆 —— 关于他本人的事(怎么叫他、常开什么应用、听错的词)。
+        //
+        //   ★★ 这一行**回答的是他那句话**:「云端老师教错了,那我该咋办」——
+        //     所以它的副标题必须**当场报出条数**:她一条都没记着(或记得很少)的时候,
+        //     他根本不会想到去点它。见 [showMemoryPanel]。
+        val memRow = settingRow("记忆库", "", {})
+
         // ── 原有的「她一直在」那一组 ──
         val aliveRow = settingRow("她一直在", "", { toggleAlive() })
         val quietRow = settingRow("免打扰", "", { toggleQuiet() })
@@ -4192,6 +4552,21 @@ class ConMarnActivity : Activity() {
         // ★ 点击**故意留空**:它也要走「先关掉这一层再开子页」,而那句话得等
         //   [openPage] 声明出来才写得了(Kotlin 的局部函数不能提前引用后声明的局部变量)。
         val apiRow = settingRow("API 控制中心", "") {}
+
+        // ── 云端兜底(2026-10-09)──
+        //
+        //   他原话:「**帮我直接加一个云端兜底开关好吧**」。加它之前,「关掉云端」**只有一条路** ——
+        //   进「API 控制中心」把 key 那一框删空。那不是开关,那是**销毁配置**:
+        //   想再打开得把 key 找回来重填一遍。而他要的只是「现在别发出去」。
+        //
+        //   ★ 它是**一把独立的锁**,和 key **串着** —— 两个都开才出手机(见
+        //     [AiAgent.chat] 那条 if)。所以「有 key 但关着」是**合法状态**,而且
+        //     正是他要待的那个位置:key 原地留着,一个字节都不出去,想开的时候拨回来。
+        //   ★ 它同时管**云端老师**(见 [AiAgent.askTeacher])—— 「关掉云端」如果只关一半,
+        //     界面结构照旧往外走,那这个钮就是在说反话。
+        //   ★ 点击**故意留空**:它要调的那两个东西(`toggleCloud` 和 `doRefresh`)都在后面
+        //     (Kotlin 的局部变量不能提前引用),照 [apiRow] 那个先例,挂到下面那一排里。
+        val cloudRow = settingRow("云端兜底", "") {}
 
         // ★ 只在「她该一直在、却发不出通知」时才多出这一行。
         //
@@ -4271,10 +4646,36 @@ class ConMarnActivity : Activity() {
                 else "此刻:心情 ${st.mood}、亲密度 ${st.intimacy}。" +
                     "点进去能看见她现在的样子,也能自己拨。")
 
+            // ★★ 记忆库那一行**必须当场报条数**:空的(或记得很少)的时候,
+            //   他根本不会想到点它 —— 而这正是他最需要进去的时候(老师教错了)。
+            //   ★ 两个库都是**只读**入口([ExperienceStore.all] / [UserLexicon.snapshot]),
+            //     不写盘、不记「他来过」(同下面那句 [MoodStore.snapshot] 的规矩)。
+            val exps = ExperienceStore.all().size
+            val lex = UserLexicon.snapshot()
+            val about = ((lex?.call?.size ?: 0) + (lex?.avoid?.size ?: 0) +
+                (lex?.apps?.size ?: 0) + (lex?.fixes?.size ?: 0))
+            setRow(memRow, "记忆库",
+                if (exps == 0 && about == 0) "现在是空的 —— 她什么都没记着。点进去能亲手教她。"
+                else "记着 $exps 条经验、$about 条关于你的事。她答错话的时候,来这儿改。")
+
             val apis = ApiStore.purposes()
             setRow(apiRow, "API 控制中心",
                 if (apis.isEmpty()) "里面是空的 —— 她一样外部的东西都查不到。"
                 else apis.joinToString("、") { it.label } + " —— 点进去加 key、切服务商、看用量。")
+
+            // ★★ 这一行的两句小字**必须说清「出不出手机」** —— 那是这个钮唯一的意思。
+            //   ★ 关着的时候还要**明说会付出什么**:本地卡住时他要多等(不像开着那样几秒就转走)。
+            //     不说的话,他关完遇到一次「半天不理我」会以为是 bug,而实际是他自己关的。
+            val cloudOn = agent().config.cloudOn
+            val cloudHasKey = agent().config.cloudApiKey.isNotEmpty()
+            setRow(cloudRow, "云端兜底:" + if (cloudOn) "开" else "关",
+                when {
+                    !cloudOn -> "关着 —— 全都在本机算,一个字节都不出手机(云端老师也一起停了)。" +
+                        "本机卡住的时候我会一直等它,不会拿你的话去换答案。"
+                    !cloudHasKey -> "开着,但还没填 key,所以实际上也没在用。要真用起来去「API 控制中心」填一个。"
+                    else -> "本地答不上来时,我把这一轮的话发给云端换一个答案。" +
+                        "偶尔还会拿界面结构去问一次「老师」。"
+                })
             refreshSettingsBtn()
         }
 
@@ -4285,8 +4686,8 @@ class ConMarnActivity : Activity() {
         }
         val liveRows = listOfNotNull(
             pcRow, ttsRow, wakeRow, greetRow,  // ← 「她的声音」2026-10-06、「她的嗓子」2026-10-08 都收起来了
-            herRow,
-            apiRow, aliveRow, notifRow, quietRow, quietTimeRow,
+            herRow, memRow,
+            apiRow, cloudRow, aliveRow, notifRow, quietRow, quietTimeRow,
         )
         // 行里的点击要能在切完之后刷新,所以把 refresh 挂到一个可变的引用上
         var doRefresh: () -> Unit = {}
@@ -4316,10 +4717,12 @@ class ConMarnActivity : Activity() {
         }
         quietTimeRow.setOnClickListener { openPage { showQuietIntro() } }
         apiRow.setOnClickListener { openPage { showApiCenter() } }
+        cloudRow.setOnClickListener { toggleCloud(); doRefresh() }
         // ★ 它原来靠「关掉子页那一刻叫一声」来刷新那行小字(它写着「此刻:心情 62」)。
         //   现在不用了:**子页关掉时整个列表是重新开一遍的**(回程就是 [showSettings]),
         //   数字天然是新的 —— 而且比原来还新(原来那个列表是点进去之前那一份)。
         herRow.setOnClickListener { openPage { showHerPanel() } }
+        memRow.setOnClickListener { openPage { showMemoryPanel() } }
         doRefresh = { refresh() }
         liveRows.forEach { box.addView(it, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)) }
@@ -5005,6 +5408,29 @@ class ConMarnActivity : Activity() {
         this.text = text
     }
 
+    /**
+     * 区块标题。★ 和 [showHerPanel] 里那份同款式 —— 13f / 她的粉 / 上面留一大截白。
+     *
+     * ★ 用的色是 [R.color.glass_accent] 而**不是**原来那个 `0xFFE05B8E`:后者压在
+     *   约七成白的玻璃上对比度只有 3:1 上下,13sp 的小字会吃力(这是 2026-10-08
+     *   换玻璃那一轮定的规矩,深色按钮上那份粉一个字不动)。
+     */
+    private fun sectionTitle(t: String): TextView = TextView(this).apply {
+        text = t
+        textSize = 13f
+        setTextColor(getColor(R.color.glass_accent))
+        setPadding(dp(2), dp(22), dp(2), 0)
+    }
+
+    /**
+     * 一整行的布局参数。
+     *
+     * ★ 记忆库里**每一行都得占满整宽** —— `box.addView(row)` 不传参数时默认 wrap_content,
+     *   在竖排 LinearLayout 里会挤成靠左一小团,点起来一半是空的(那正是「看得见、按不动」的成因之一)。
+     */
+    private fun fullRow() = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+
     /** 二级:按用途列。 */
     private fun showApiCenter() {
         val box = column()
@@ -5290,6 +5716,710 @@ class ConMarnActivity : Activity() {
         pageDialog("${p.label} · 用量", box)
     }
 
+    // ══════════════════════════════════════════════════════════════════════════
+    //  记忆库(2026-10-08)—— 他能看 / 删 / 加 / 改她学到的东西
+    // ══════════════════════════════════════════════════════════════════════════
+    //
+    // 他原话:「**我要自己的记忆库+经验库就行**」「可以随时删改它的记忆库,这个能做到吗?
+    // 这样我就能在她出现 bug、错误的时候教她」「本质上,就是能有一个**训练它的本地入口**」。
+    // 而这一整摊真正回答的是他那句话:「**云端老师教错了,那我该咋办**」。
+    //
+    // ★★ 两半,名字不同、后果也不同,别混成一件:
+    //   · **经验库**([ExperienceStore])—— 她「碰上这种情况先按这个顺序试」的做法。
+    //     这些大半是**云端老师**教的,所以「老师教错了」就发生在这里。
+    //   · **长期记忆**([UserLexicon])—— 关于他本人的事实(怎么叫他、常开什么应用、
+    //     他听错过的词)。这一半是她自己从他说话里听来的。
+    //
+    // ★★ 两种「不要它了」后果**不一样**,这是这一页最要紧的一句话,界面上必须写出来:
+    //   「删掉」= 她手上没这条了,下次再碰上**还得花钱问云端老师**;
+    //   「别再要了」= 这条还留着,但**永远不会用**,老师下次再教一模一样的做法会被当场拒掉
+    //   ([ExperienceStore.learn] 回 null)→ 也就不用再花那一次钱。**老师教错了用这个。**
+    //
+    // ★ 这里每一次「删」都**不带二次确认框** —— 因为**他本人就是那个被问的人**
+    //   (这个项目那条最高优先级的规矩是「删任何东西前先问」,这儿他就是按下去的那位)。
+    //   代价:误点一下就真没了。所以**每一行都必须把后果写在它自己身上**,不能藏在别的页面里。
+    //
+    // ★★ 用词的规矩(他自己定的那条「**别用行话跟他讲代码**」):
+    //   `offscreen` / `blind` / `empty` / `scroll` / `teacher` **一个都不许出现在屏幕上** ——
+    //   见 [kindWord] / [verbWord] / [sourceWord]。
+    //
+    // ★★ 两个库**都不落盘一份 UI 快照**:每一页进/show 的时候**现读一遍**
+    //   ([ExperienceStore.all] / [UserLexicon.snapshot] 都是只读、不写盘、不记「他来过」)。
+    //   所以「改完退出来数字还是旧的」这件事在结构上不会发生。
+
+    /** 经验库那三种情况的人话。★ 和 `AiAgent` 里那两份说法对齐,别造第三套词。 */
+    private fun kindWord(kind: String): String = when (kind) {
+        "offscreen" -> "东西在,但滚出屏幕了"
+        "blind" -> "屏幕上有字,但没有要找的那个词"
+        "empty" -> "屏幕上认不出字"
+        else -> kind
+    }
+
+    /** 三个动词的人话。★ 这几个词是唯一能存的「做法」单位(`ExperienceStore.VERBS`)。 */
+    private fun verbWord(v: String): String = when (v) {
+        "scroll" -> "滚动"
+        "search" -> "用它自己的搜索"
+        "visual" -> "看图找"
+        else -> v
+    }
+
+    /** 这条是谁教的 —— 「老师教错了」那句话的落点就在它上面。 */
+    private fun sourceWord(s: String): String = when (s) {
+        "seed" -> "出厂自带"
+        "teacher" -> "云端老师教的"
+        "manual" -> "你自己加的"
+        else -> s
+    }
+
+    /** 把一串动词拼成人话:「1.滚动 → 2.用它自己的搜索」。 */
+    private fun verbsText(verbs: List<String>): String =
+        verbs.mapIndexed { i, v -> "${i + 1}.${verbWord(v)}" }.joinToString(" → ")
+
+    /** 经验库只有这三种情况 —— 和 `AiAgent` 里那个 `when` 是同一个封闭集合。 */
+    private val MEM_KINDS = listOf("offscreen", "blind", "empty")
+
+    /**
+     * 记忆库里**往里走一层**用的壳。
+     *
+     * ★★ 为什么不能直接用 [pageDialog]:它把回程**写死成「⚙ 列表」**
+     *   (`glassReturn = { showSettings() }`)。回程是**一个**变量 ——
+     *   在记忆库里点进「经验库」再关掉,直接落到 ⚙ 列表就等于**把记忆库那一层跳掉了**,
+     *   他只会觉得「我刚点的那页没了」。
+     *
+     * ★ `positive` 默认「好」(只是看看的那些页);要存东西的页传「保存」/「存」。
+     *   这两页的保存**必须走 [showPersonaEdit] 那个写法** —— `setPositiveButton(text, null)`
+     *   拿到句柄自己挂监听,而不是 `setPositiveButton("保存") { … }`:后者是**先关窗再回调**,
+     *   校验没过就没法把他留在这一页(改了半天被关掉,改动全丢)。
+     */
+    private fun memPage(
+        title: String,
+        box: View,
+        back: () -> Unit = { showMemoryPanel() },
+        positive: String = "好",
+    ): AlertDialog {
+        glassReturn = back
+        return glassBuilder(title)
+            .setView(ScrollView(this).apply { addView(box) })
+            .setPositiveButton(positive, null)
+            .show()
+            .glassified()
+    }
+
+    /** 记忆库的门 —— ⚙ 列表里那一行点进来的第一页。★ 回程走 [pageDialog](= 回到 ⚙ 列表)。 */
+    private fun showMemoryPanel() {
+        val box = column()
+
+        box.addView(sectionTitle("经验库"))
+        box.addView(hint(
+            "她碰上「点不到东西」这类麻烦时,会先按她自己记住的做法试一遍。" +
+                "有些是出厂就有的,有些是云端老师教的 —— **老师教错了,就在这儿删掉或者改掉**。"
+        ))
+        val expRow = settingRow("她记住的做法", "", {})
+        box.addView(expRow, fullRow())
+
+        box.addView(sectionTitle("长期记忆"))
+        box.addView(hint("这些是她从你说话里听来的、关于你本人的事。记歪了她不会报错,只会一直照着错的那个来。"))
+
+        val lex = UserLexicon.snapshot()
+        val callRow = settingRow("她该怎么叫你", "", {})
+        val avoidRow = settingRow("她不许这么叫你", "", {})
+        val appRow = settingRow("你常开的应用", "", {})
+        val fixRow = settingRow("她听错的词", "", {})
+        listOf(callRow, avoidRow, appRow, fixRow).forEach { box.addView(it, fullRow()) }
+
+        // ★ 这一页每次进来现读一遍(它没有 ⚙ 列表那种 refresh),所以下面四个数**当场就是新的**。
+        val exps = ExperienceStore.all()
+        setRow(expRow, "她记住的做法",
+            if (exps.isEmpty()) "空的 —— 她一条做法都没记住。"
+            else "${exps.size} 条(每种情况最多记 ${ExperienceStore.MAX_PER_KIND} 条)。")
+
+        setRow(callRow, "她该怎么叫你",
+            if (lex == null || lex.call.isEmpty()) "还没记 —— 你直接说「叫我小明」她自己也会记。"
+            else lex.call.joinToString("、"))
+        setRow(avoidRow, "她不许这么叫你",
+            if (lex == null || lex.avoid.isEmpty()) "没有。" else lex.avoid.joinToString("、"))
+        setRow(appRow, "你常开的应用",
+            if (lex == null || lex.apps.isEmpty()) "还没记 —— 她真开成一次才算数。"
+            else lex.apps.entries.sortedByDescending { it.value }.take(4)
+                .joinToString("、") { "${it.key} ${it.value} 次" } +
+                if (lex.apps.size > 4) " 等 ${lex.apps.size} 个" else "")
+        setRow(fixRow, "她听错的词",
+            if (lex == null || lex.fixes.isEmpty()) "没有。" else "共 ${lex.fixes.size} 条")
+
+        box.addView(sectionTitle("「删掉」和「别再要了」不一样"))
+        box.addView(hint(
+            "· **删掉** = 她手上没这条了。下次再碰上,她**还得花钱问一次**云端老师。\n" +
+                "· **这条别再要了** = 她还留着它,但**永远不会用**;" +
+                "老师下次再教一模一样的做法会被当场拒掉 —— 所以**连那次钱也省了**。" +
+                "**老师教错了,就用这个。**"
+        ))
+        box.addView(hint("★ 这里的每一下都是真的。删空了她就真的什么都不记得 —— 不会自己长回来。"))
+
+        var dlg: AlertDialog? = null
+
+        // ★★ 「往里走一层」= **先关掉这一层,再开子页** —— 两层玻璃叠着会透字(见 [glassLive])。
+        //   顺序不能反:先 `dismiss()` 后 `glassReturn` 的话,那一层关掉时回程还是旧的。
+        fun open(go: () -> Unit) {
+            glassReturn = { showMemoryPanel() }
+            dlg?.dismiss()
+            go()
+        }
+
+        expRow.setOnClickListener { open { showMemExpPage() } }
+        callRow.setOnClickListener { open { showMemNamePage(avoid = false) } }
+        avoidRow.setOnClickListener { open { showMemNamePage(avoid = true) } }
+        appRow.setOnClickListener { open { showMemAppPage() } }
+        fixRow.setOnClickListener { open { showMemFixPage() } }
+
+        dlg = pageDialog("记忆库", box)
+    }
+
+    // ── 经验库 ────────────────────────────────────────────────────────────────
+
+    /** 经验库的清单。按那三种情况分组 —— 分组是**读得懂**的前提(不分组就是一堆动词串)。 */
+    private fun showMemExpPage() {
+        val box = column()
+        val all = ExperienceStore.all()
+
+        box.addView(hint(
+            "她碰到麻烦时会**从上往下**试这几条。越靠上的越信得过 —— " +
+                "每做成一次往上走一点,砸了就往下走一点。"
+        ))
+
+        var dlg: AlertDialog? = null
+        fun open(go: () -> Unit) {
+            glassReturn = { showMemExpPage() }
+            dlg?.dismiss()
+            go()
+        }
+
+        if (all.isEmpty()) {
+            box.addView(hint("一条都没有。她下次碰上麻烦只能去问云端老师 —— **那要联网,而且要花钱**。"))
+        }
+
+        MEM_KINDS.forEach { k ->
+            val mine = all.filter { it.kind == k }
+            box.addView(sectionTitle(kindWord(k)))
+            if (mine.isEmpty()) {
+                box.addView(hint("(这种情况还没有任何做法)"))
+            }
+            mine.forEach { e -> box.addView(expRowOf(e) { open { showMemExpMenu(e) } }, fullRow()) }
+        }
+
+        // ★ 封闭集合**以外**的也列出来,别静默丢掉 —— 丢掉的那条它照样会用,
+        //   而他会以为「我删了」或者「这里没有」。将来加了新 kind,这一块自动接住。
+        val others = all.filter { it.kind !in MEM_KINDS }
+        if (others.isNotEmpty()) {
+            box.addView(sectionTitle("别的情况"))
+            others.forEach { e -> box.addView(expRowOf(e) { open { showMemExpMenu(e) } }, fullRow()) }
+        }
+
+        box.addView(hint("★ 每种情况最多记 ${ExperienceStore.MAX_PER_KIND} 条。再往里加,最没把握的那条**会被挤出去** —— 到时候会当场告诉你。"))
+
+        dlg = memPage("经验库", box)
+    }
+
+    /** 经验库里的一行。★ 页面各处在用,单独抽出来免得两份说法慢慢长歪。 */
+    private fun expRowOf(e: ExperienceStore.Exp, onTap: () -> Unit): LinearLayout {
+        val title = (if (e.enabled) "" else "【已停用】") + verbsText(e.verbs)
+        val sub = buildString {
+            append(sourceWord(e.source))
+            append(" · 成 ${e.wins} 次 / 用 ${e.uses} 次")
+            if (!e.enabled) append(" · **她不会再碰这条**")
+            if (e.reason.isNotBlank()) { append("\n"); append(e.reason) }
+        }
+        return settingRow(title, sub, onTap)
+    }
+
+    /** 单条经验能做的事:改 / 别再要了(或让它回来) / 删掉。 */
+    private fun showMemExpMenu(e: ExperienceStore.Exp) {
+        val box = column()
+
+        box.addView(sectionTitle("这一条"))
+        box.addView(hint(
+            "什么时候用:${kindWord(e.kind)}\n" +
+                "她会试的顺序:${verbsText(e.verbs)}\n" +
+                "谁教的:${sourceWord(e.source)}\n" +
+                "战绩:成 ${e.wins} 次 / 用 ${e.uses} 次" +
+                (if (e.reason.isBlank()) "" else "\n当时的说法:${e.reason}")
+        ))
+
+        var dlg: AlertDialog? = null
+
+        box.addView(sectionTitle("要做什么"))
+
+        box.addView(settingRow("改这条的做法", "换掉试的顺序,或者少一步多一步。", {
+            glassReturn = { showMemExpMenu(e) }
+            dlg?.dismiss()
+            showMemExpEdit(e.kind, e)
+        }), fullRow())
+
+        box.addView(settingRow(
+            if (e.enabled) "这条别再要了" else "让它回来",
+            if (e.enabled)
+                "她还留着它,但**永远不会再用**;老师下次再教一模一样的做法也会被当场拒掉 —— **连那次钱也省了**。"
+            else
+                "她重新开始用这条。",
+            {
+                // ★★ `setEnabled` 是**原地改**这个对象的(`e.enabled = on`)——
+                //   所以那句回话必须**先记下原来是什么**再说。反过来的话第一句永远成立,
+                //   第二句永远说不出口(他刚点了「让它回来」,回话却是「她不会再用了」)。
+                val was = e.enabled
+                ExperienceStore.setEnabled(e, !was)
+                toast(if (was) "好,这条她不会再用了。" else "好,这条她重新用上了。")
+                dlg?.dismiss()
+            }
+        ), fullRow())
+
+        box.addView(settingRow("删掉", "真的删掉。她以后要再学会它,得**再花钱问一次**云端老师。", {
+            val ok = ExperienceStore.remove(e)
+            toast(if (ok) "删掉了。" else "没删成 —— 它已经不在了。")
+            dlg?.dismiss()
+        }), fullRow())
+
+        // ★ 回程是**这一条自己的页**而不是清单:改完退回来,他还看得见刚才那条的现状。
+        dlg = memPage("这条经验", box, back = { showMemExpPage() })
+    }
+
+    /**
+     * 加一条 / 改一条经验。
+     *
+     * ★★ 做法**只能从 [ExperienceStore.VERBS] 里点选,不许手打** —— 因为
+     *   `ExperienceStore.parseVerbs` 遇到任何不认识的词**整条返回 null**。
+     *   给他一个能打字却默默存不进去的框,就是这一摊里最坏的那种失败。
+     *
+     * ★★ **保存那一下必须查两件事**(都写在下面了):
+     *   ① 存进去了没有([ExperienceStore.add] / [update] 回 null);
+     *   ② ★ 存进去的那条**会不会当场被挤掉** —— 见 [ExperienceStore.MAX_PER_KIND] 那段:
+     *      满了是**挤掉旧的**,而且新加的那条(成 0 次 / 用 0 次)本身就可能被挤掉,
+     *      可 `add` 照样回一个非 null 的 `Exp`。不查的话他会得到一句「存好了」而东西不在。
+     */
+    private fun showMemExpEdit(kind: String, existing: ExperienceStore.Exp?) {
+        val box = column()
+
+        box.addView(hint(
+            "她的做法 = **按顺序试这几步**。点一下加进去,**顺序就是点的顺序**;再点一下拿掉。\n" +
+                "只认识这三种:[${ExperienceStore.VERBS.joinToString(" / ") { verbWord(it) }}]," +
+                "而且**最多 ${ExperienceStore.MAX_VERBS} 步**。"
+        ))
+
+        val picked = ArrayList<String>(existing?.verbs ?: emptyList())
+        val preview = TextView(this).apply {
+            textSize = 12f
+            setTextColor(getColor(R.color.glass_text))
+            setPadding(dp(2), dp(12), dp(2), dp(2))
+        }
+        val reasonEd = glassInput().apply {
+            setHint("这条是为什么(写给你自己看就行)")
+            if (existing != null && existing.reason.isNotBlank()) setText(existing.reason)
+            setSingleLine(false)
+        }
+
+        val rows = ExperienceStore.VERBS.map { v -> settingRow("", "", {}) to v }
+
+        fun paint() {
+            rows.forEach { (row, v) ->
+                val i = picked.indexOf(v)
+                setRow(
+                    row,
+                    if (i >= 0) "${i + 1}. ${verbWord(v)}" else "＋ ${verbWord(v)}",
+                    if (i >= 0) "已经在里面了 —— 再点一下拿掉。" else "点一下加进去。"
+                )
+            }
+            preview.text = if (picked.isEmpty()) "还没选任何一步 —— 空的做法存不了。"
+            else "她会依次试:" + verbsText(picked)
+        }
+
+        rows.forEach { (row, v) ->
+            row.setOnClickListener {
+                val i = picked.indexOf(v)
+                when {
+                    i >= 0 -> picked.removeAt(i)
+                    // ★★ 第 5 步**在这里就拦住** —— 放进去了 `parseVerbs` 也会 `.take(4)`
+                    //   静默丢掉,而他看到的是「存好了」。宁可当场说一句,不要存完才发现少两步。
+                    picked.size >= ExperienceStore.MAX_VERBS ->
+                        toast("最多 ${ExperienceStore.MAX_VERBS} 步 —— 先拿掉一个再加。")
+                    else -> picked.add(v)
+                }
+                paint()
+            }
+        }
+
+        box.addView(sectionTitle("按顺序试哪几步"))
+        rows.forEach { (row, _) -> box.addView(row, fullRow()) }
+        box.addView(preview, fullRow())
+        box.addView(sectionTitle("为什么"))
+        box.addView(reasonEd, fullRow())
+        box.addView(hint("★ 这种情况最多记 ${ExperienceStore.MAX_PER_KIND} 条。满了再往里加,最没把握的那条会被挤出去。"))
+
+        val d = memPage(
+            if (existing == null) "加一条做法" else "改这条做法",
+            box,
+            back = { showMemExpPage() },
+            positive = "保存",
+        )
+        paint()
+
+        d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            if (picked.isEmpty()) {
+                toast("至少选一步 —— 空的做法存不了。")
+                return@setOnClickListener
+            }
+            val reason = reasonEd.text.toString().trim()
+            val chain = picked.joinToString(" ")
+
+            val before = ExperienceStore.all()
+            val saved = if (existing == null) ExperienceStore.add(kind, chain, reason)
+            else ExperienceStore.update(existing, chain, reason)
+            if (saved == null) {
+                // ★ 走到这儿只可能是「同一条做法已经在了」—— 而 `add` 在**它被停用**时也回 null
+                //   (见 [ExperienceStore.learn] 那段)。所以这句话必须把他指到那条上,不能只说「失败了」。
+                toast(
+                    if (existing == null)
+                        "这条加不进去 —— 多半是它已经在了、而且被你设成了「别再要了」。去那条上点「让它回来」。"
+                    else
+                        "改不了 —— 这条已经不在了(大概是刚被删过)。退出去重进一下。"
+                )
+                return@setOnClickListener                  // ★ 留在这一页,别把他刚敲的东西扔掉
+            }
+
+            val after = ExperienceStore.all()
+            // ★★ 「谁被挤掉了」只能靠**对象身份**比 —— [ExperienceStore.all] 交出来的就是
+            //   `items` 里那几个对象本身,所以 `===` 是一条准的判据。
+            //   ★ 而**必须把 `existing` 自己排除掉**:[ExperienceStore.update] 是「换一条」,
+            //     它回的是一个**新对象**(`e.copy(...)`),旧的那个自然就不在 `after` 里了 ——
+            //     不排除的话,他每改一次都会听到「旧的那条被让位了」,而根本没东西被挤掉。
+            val gone = before.filter { o -> o !== existing && after.none { it === o } }
+            toast(when {
+                // ★★ 新加的这条自己就是那个被挤掉的 —— `add` 这时候**照样回了一个非 null**
+                after.none { it === saved } ->
+                    "没能留下 —— 这一种情况已经攒满 ${ExperienceStore.MAX_PER_KIND} 条," +
+                        "而它最没把握,当场就被挤掉了。"
+                gone.isEmpty() -> "存好了。"
+                gone.size == 1 ->
+                    "存好了 —— 但这一种情况只留 ${ExperienceStore.MAX_PER_KIND} 条," +
+                        "旧的那条「${verbsText(gone[0].verbs)}」被让位了。"
+                else ->
+                    "存好了 —— 但这一种情况只留 ${ExperienceStore.MAX_PER_KIND} 条," +
+                        "${gone.size} 条旧的被让位了。"
+            })
+            d.dismiss()
+            return@setOnClickListener
+        }
+    }
+
+    // ── 长期记忆 · 她该怎么叫你 / 不许这么叫 ───────────────────────────────────
+
+    /**
+     * 两个名字名单共用一页 —— 它们本来就是**同一份名单的两面**:
+     * 一边加进去,另一边的同名会被当场拿掉(`LexiconMath.addCall` / `addAvoid`)。
+     * 分成两页写会让人以为这是两件不相干的事,而它俩必须一致,否则拼进提示词
+     * 就成了「叫她小明」+「别叫她小明」,她只能瞎猜。
+     */
+    private fun showMemNamePage(avoid: Boolean) {
+        val box = column()
+        val s = UserLexicon.snapshot()
+        val list: List<String> = if (avoid) (s?.avoid ?: emptyList()) else (s?.call ?: emptyList())
+
+        box.addView(hint(
+            if (avoid) "这些是她**不许**用来叫你的。你说了「别叫我老板」,她就会记在这儿。"
+            else "这些是她**会**用来叫你的。她跟你说话时会照着这个叫。"
+        ))
+        box.addView(hint(
+            "★ 两边最多各 ${UserLexicon.MAX_CALL} 个,**满了就拒 —— 旧的不许被悄悄挤掉**" +
+                "(悄悄丢一个的后果是「我明明教过她,她怎么忘了」,而你根本不会往这儿想)。"
+        ))
+
+        var dlg: AlertDialog? = null
+        fun open(go: () -> Unit) {
+            glassReturn = { showMemNamePage(avoid) }
+            dlg?.dismiss()
+            go()
+        }
+
+        if (list.isEmpty()) {
+            box.addView(hint("现在是空的 —— 她自己还没听出来,你也没手填过。"))
+        }
+        list.forEach { n ->
+            box.addView(settingRow(n, "点一下能删掉。", { open { showMemNameMenu(avoid, n) } }), fullRow())
+        }
+
+        box.addView(sectionTitle("加一个"))
+        box.addView(settingRow("＋ 自己写一个", "最多 ${UserLexicon.MAX_NAME_LEN} 个字。", {
+            open { showMemNameAdd(avoid) }
+        }), fullRow())
+        box.addView(hint("要改一个已经记下的,就**先删掉再加一个** —— 直接改名字会让「哪一条是新的」变得说不清。"))
+
+        dlg = memPage(if (avoid) "她不许这么叫你" else "她该怎么叫你", box)
+    }
+
+    /** 单个名字:只有一件事可做 —— 删。 */
+    private fun showMemNameMenu(avoid: Boolean, name: String) {
+        val box = column()
+        box.addView(hint("「$name」"))
+        var dlg: AlertDialog? = null
+        box.addView(settingRow("删掉", "真的删掉。以后她想再记起来,得重新听你说一次。", {
+            val ok = if (avoid) UserLexicon.removeAvoid(name) else UserLexicon.removeCall(name)
+            toast(if (ok) "删掉了。" else "没删成 —— 它已经不在了。")
+            dlg?.dismiss()
+        }), fullRow())
+        dlg = memPage(if (avoid) "不许这么叫" else "怎么叫你", box, back = { showMemNamePage(avoid) })
+    }
+
+    /** 手填一个名字。★ 校验走 `LexiconMath.clean`(**不套** `looksLikeName`)—— 见那个函数的 KDoc。 */
+    private fun showMemNameAdd(avoid: Boolean) {
+        val box = column()
+        box.addView(hint(
+            if (avoid) "写一个她**不许**用来叫你的。"
+            else "写一个她**可以**用来叫你的。"
+        ))
+        val ed = glassInput().apply {
+            setHint(if (avoid) "比如:老板" else "比如:小明")
+            setSingleLine(true)
+        }
+        box.addView(ed, fullRow())
+        box.addView(hint("★ 最多 ${UserLexicon.MAX_NAME_LEN} 个字。"))
+
+        val d = memPage(if (avoid) "不许这么叫" else "怎么叫你", box,
+            back = { showMemNamePage(avoid) }, positive = "存")
+
+        d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val name = LexiconMath.clean(ed.text.toString(), UserLexicon.MAX_NAME_LEN)
+            if (name == null) {
+                toast("得是 1~${UserLexicon.MAX_NAME_LEN} 个字。")
+                return@setOnClickListener
+            }
+            val s = UserLexicon.snapshot()
+            if (s == null) {
+                toast("记忆没读出来 —— 退出去重进一下。")
+                return@setOnClickListener
+            }
+            val cur = if (avoid) s.avoid else s.call
+            val other = if (avoid) s.call else s.avoid
+            if (name in cur) {
+                toast("「$name」已经在里面了。")
+                return@setOnClickListener
+            }
+            if (cur.size >= UserLexicon.MAX_CALL) {
+                toast("最多记 ${UserLexicon.MAX_CALL} 个 —— 满了要先删一个,旧的不会被挤掉。")
+                return@setOnClickListener
+            }
+            val ok = if (avoid) UserLexicon.addAvoid(name) else UserLexicon.addCall(name)
+            if (!ok) {
+                toast("没存进去。")
+                return@setOnClickListener
+            }
+            toast(
+                if (name in other) "存好了:$name(顺手把另一边的同名拿掉了 —— 不然她得猜。)"
+                else "存好了:$name"
+            )
+            d.dismiss()
+            return@setOnClickListener
+        }
+    }
+
+    // ── 长期记忆 · 你常开的应用 ────────────────────────────────────────────────
+
+    /** 次数是**她数出来的**,但允许他改 —— 那是他的账本,记歪了得能自己抹平。 */
+    private fun showMemAppPage() {
+        val box = column()
+        val s = UserLexicon.snapshot()
+        val apps = s?.apps ?: emptyMap<String, Int>()
+
+        box.addView(hint("她真开成一次才算数。这个数是她的账本 —— 记歪了你随时能改。"))
+        if (apps.isEmpty()) box.addView(hint("现在是空的。"))
+
+        var dlg: AlertDialog? = null
+        fun open(go: () -> Unit) {
+            glassReturn = { showMemAppPage() }
+            dlg?.dismiss()
+            go()
+        }
+
+        apps.entries.sortedByDescending { it.value }.forEach { (n, t) ->
+            box.addView(settingRow(n, "$t 次 · 点一下能改或删掉。", { open { showMemAppEdit(n, t) } }), fullRow())
+        }
+
+        box.addView(sectionTitle("加一个"))
+        box.addView(settingRow("＋ 自己写一个", "最多 ${UserLexicon.MAX_APPS} 个。", { open { showMemAppAdd() } }), fullRow())
+
+        dlg = memPage("你常开的应用", box)
+    }
+
+    /** 改一条的次数:＋ / − / 删。★ 用加减而**不是**手填数字 —— 少一个能打错的地方。 */
+    private fun showMemAppEdit(name: String, times: Int) {
+        val box = column()
+        box.addView(hint("「$name」现在是 $times 次。"))
+
+        var dlg: AlertDialog? = null
+        fun set(newTimes: Int, say: String) {
+            val ok = UserLexicon.setApp(name, newTimes)
+            toast(if (ok) say else "没改成功 —— 它已经不在了。")
+            dlg?.dismiss()
+        }
+
+        box.addView(herButton("＋1(她刚又开了一次)", 14f) { set(times + 1, "好,$name 记成 ${times + 1} 次。") }, fullRow())
+        box.addView(herButton("−1", 14f) {
+            if (times <= 1) set(0, "减到 0 了,这条一并删掉。") else set(times - 1, "好,$name 记成 ${times - 1} 次。")
+        }, fullRow())
+        box.addView(settingRow("删掉这条", "她以后还会自己重新数。", { set(0, "删掉了。") }), fullRow())
+
+        dlg = memPage("改次数", box, back = { showMemAppPage() })
+    }
+
+    private fun showMemAppAdd() {
+        val box = column()
+        box.addView(hint("写一个应用的名字(和她开的时候叫的那个名字一致)。"))
+        val ed = glassInput().apply {
+            setHint("比如:微信")
+            setSingleLine(true)
+        }
+        box.addView(ed, fullRow())
+
+        val d = memPage("加一个应用", box, back = { showMemAppPage() }, positive = "存")
+        d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val raw = ed.text.toString()
+            val name = LexiconMath.clean(raw, UserLexicon.MAX_NAME_LEN)
+            if (name == null) {
+                toast("得是 1~${UserLexicon.MAX_NAME_LEN} 个字。")
+                return@setOnClickListener
+            }
+            val s = UserLexicon.snapshot()
+            if (s == null) {
+                toast("记忆没读出来 —— 退出去重进一下。")
+                return@setOnClickListener
+            }
+            // ★ 已经有的**不许当成「加」** —— `setApp` 会把次数直接写成 1,
+            //   那就成了「他点了一下加,结果原来的 12 次要变成 1 次」。得指他去改。
+            if (name in s.apps) {
+                toast("「$name」已经在里面了(现在 ${s.apps[name]} 次)—— 点它改次数。")
+                return@setOnClickListener
+            }
+            if (s.apps.size >= UserLexicon.MAX_APPS) {
+                toast("最多记 ${UserLexicon.MAX_APPS} 个 —— 满了要先删一个。")
+                return@setOnClickListener
+            }
+            val ok = UserLexicon.setApp(name, 1)
+            if (!ok) {
+                toast("没加进去。")
+                return@setOnClickListener
+            }
+            toast("加上了:$name(先记 1 次)")
+            d.dismiss()
+            return@setOnClickListener
+        }
+    }
+
+    // ── 长期记忆 · 她听错的词 ──────────────────────────────────────────────────
+
+    /**
+     * 同音字纠正:她把这个词听错了,下次自动换成那个对的。
+     *
+     * ★ `bad` 常常就是一句识别错的怪话(「威信」这种),所以这里**一个字都不校验是不是人话** ——
+     *   拿「像不像名字」那套规则去挡,只会把要修的东西挡在门外。
+     */
+    private fun showMemFixPage() {
+        val box = column()
+        val s = UserLexicon.snapshot()
+        val fixes = s?.fixes ?: emptyMap<String, String>()
+
+        box.addView(hint(
+            "她**听错过的词**。记下来之后,下次她再听到一样的声音,会自动换成对的那个 —— " +
+                "你就不用纠正第二遍。"
+        ))
+        if (fixes.isEmpty()) box.addView(hint("现在是空的。"))
+
+        var dlg: AlertDialog? = null
+        fun open(go: () -> Unit) {
+            glassReturn = { showMemFixPage() }
+            dlg?.dismiss()
+            go()
+        }
+
+        fixes.forEach { (bad, good) ->
+            box.addView(settingRow("「$bad」→「$good」", "点一下能改或者删掉。", {
+                open { showMemFixEdit(bad) }
+            }), fullRow())
+        }
+
+        box.addView(sectionTitle("加一条"))
+        box.addView(settingRow("＋ 自己写一条", "最多 ${UserLexicon.MAX_FIXES} 条。", {
+            open { showMemFixEdit(null) }
+        }), fullRow())
+
+        dlg = memPage("她听错的词", box)
+    }
+
+    /**
+     * 加 / 改一条纠正。
+     *
+     * ★ 改的时候**只让改右边那个词** —— 左边那个是「她听到的声音」,改了它就是另一条记录了,
+     *   那样「原来那条」会不声不响地消失。要换左边,先删掉再加。
+     */
+    private fun showMemFixEdit(bad: String?) {
+        val box = column()
+
+        box.addView(hint("左边是**她听到的**,右边是**你想要的**。"))
+        val badEd = glassInput().apply {
+            setHint("她听到的,比如:威信")
+            setSingleLine(true)
+            if (bad != null) { setText(bad); isEnabled = false }
+        }
+        val goodEd = glassInput().apply {
+            setHint("你要的,比如:微信")
+            setSingleLine(true)
+            if (bad != null) UserLexicon.snapshot()?.fixes?.get(bad)?.let { setText(it) }
+        }
+        box.addView(badEd, fullRow())
+        box.addView(goodEd, fullRow())
+        box.addView(hint("★ 两边最多 ${UserLexicon.MAX_FIX_LEN} 个字,而且**不能一模一样**(那等于白记一条)。"))
+
+        var dlg: AlertDialog? = null
+        if (bad != null) {
+            box.addView(settingRow("删掉这条", "以后她就照原样听了。", {
+                val ok = UserLexicon.removeFix(bad)
+                toast(if (ok) "删掉了。" else "没删成 —— 它已经不在了。")
+                dlg?.dismiss()
+            }), fullRow())
+        }
+
+        val d = memPage(if (bad == null) "加一条纠正" else "改这条纠正", box,
+            back = { showMemFixPage() }, positive = "保存")
+        // ★ 上面那行「删掉这条」的回调里要关掉**这一页** —— 它拿的是 `dlg`,
+        //   所以这里必须接上。漏了的话删除会生效、页面却留在原地(看着像没删成)。
+        dlg = d
+
+        d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val b = LexiconMath.clean(badEd.text.toString(), UserLexicon.MAX_FIX_LEN)
+            val g = LexiconMath.clean(goodEd.text.toString(), UserLexicon.MAX_FIX_LEN)
+            if (b == null || g == null) {
+                toast("两边都得填,而且各自不超过 ${UserLexicon.MAX_FIX_LEN} 个字。")
+                return@setOnClickListener
+            }
+            if (b == g) {
+                toast("两边一模一样 —— 那等于没记。")
+                return@setOnClickListener
+            }
+            val s = UserLexicon.snapshot()
+            if (s == null) {
+                toast("记忆没读出来 —— 退出去重进一下。")
+                return@setOnClickListener
+            }
+            if (b !in s.fixes && s.fixes.size >= UserLexicon.MAX_FIXES) {
+                toast("最多记 ${UserLexicon.MAX_FIXES} 条 —— 满了要先删一条。")
+                return@setOnClickListener
+            }
+            val ok = UserLexicon.putFix(b, g)
+            if (!ok) {
+                toast("没存 —— 和原来一模一样,没什么可改的。")
+                return@setOnClickListener
+            }
+            toast("存好了:听到「$b」就当成「$g」。")
+            d.dismiss()
+            return@setOnClickListener
+        }
+    }
+
     private fun toggleAlive() {
         val on = !HerLife.isAlive(this)
         HerLife.setAlive(this, on)          // commit() 同步落盘,见 HerLife.setAlive
@@ -5389,6 +6519,88 @@ class ConMarnActivity : Activity() {
         //   而在模型上只表现成「一片灰」,**不报错**。
         val name = JSONObject.quote(f.name)
         eval("window.Her && Her.setScenery(new URL($name, document.baseURI).href)")
+    }
+
+    /**
+     * 把她的**动作**推给 JS —— 用户丢进 `motion/` 的那份 `.vrma`(见 [Wardrobe])。
+     *
+     * ★ 和 [pushRoom] / [pushRoomObjects] 有一处根本的不同:**动作不是页面来请求的**。
+     *   模型和房间模型那两条都是「页面发一个请求 → 我们决定拿外部那份还是内置那份」;
+     *   而动作**没有一个自然的请求方** —— 页面不知道他放了什么、也不知道该请求哪个名字。
+     *   所以这一条是**我们主动推**:进房间时查一次盘,有就告诉她。
+     *
+     * ★ 没放就**一句废话都不说**(`Wardrobe.motion` 返回 null)—— 她照旧用自带的待机微动。
+     *   但「目录里确实躺着 .vrma、却一个都用不了」那一种**必须说出来** ——
+     *   它和「你没放」在屏幕上长得一模一样,只有日志分得开(见 [Wardrobe.motion] 的 KDoc)。
+     */
+    private fun pushMotion() {
+        if (!herReady) return
+
+        // ★★ 2026-10-09 起这里问的是 [Wardrobe.activeMotion],不是 [Wardrobe.motion]。
+        //   两者**只差一件事**:他挑过的那条优先。
+        //   ★ **没挑过的人走的仍是原来那条路**(activeMotion 里 chosenMotion 回 null
+        //     就直接委托给 motion()),所以行为和今天**一字不差**。
+        val hit = try {
+            Wardrobe.activeMotion(this)
+        } catch (e: Exception) {
+            ModelManager.get(this).trace("换装:动作判定出错(${e.javaClass.simpleName}: ${e.message})")
+            null
+        }
+        if (hit == null) return
+        ModelManager.get(this).trace("换装:${hit.note}")
+        val f = hit.file ?: return
+
+        // ★ 和 [pushRoom] 同一个理由:传**真文件名**,不是写死的 "vrma"。
+        //   GLTFLoader 拿这个地址当相对基准去解析文件里引用的东西 ——
+        //   名字对不上就取不到,而那只表现成「她不动」,**一个字都不报**。
+        //
+        // ★★ 但库里的那份**不能只传文件名** —— 见 [motionServeUrl]。
+        val url = JSONObject.quote(motionServeUrl(f))
+        eval("window.Her && Her.setMotion(new URL($url, document.baseURI).href)")
+    }
+
+    /**
+     * 这一份动作文件,页面该用**哪个地址**去取它。
+     *
+     * ★★ 这个函数的存在只有一个理由,而它是个**会静默出错**的理由:
+     *
+     *   页面那边是 `new URL(名字, document.baseURI)`,而 `baseURI` 是
+     *   `https://…/her/index.html` —— 所以一个**裸文件名**(`Relax.vrma`)会解析成
+     *   `…/her/Relax.vrma`,而 `serveAsset` 只会拿它去 `motion/` 里找。
+     *   **库里的文件根本不在那儿** —— 于是它一路掉到 `assets.open`,
+     *   最后是一条**静默的 404**,症状是「她不动,一个字都不报」。
+     *
+     * ★ 所以:是库里的那份 → 给 `motion-lib/<相对路径>`(走 [LIB_PREFIX] 那条路);
+     *   不是 → 原样给文件名(**`motion/` 那套一个字节都不动**)。
+     *
+     * ★ 怎么判「是不是库里的」:**拿库根做一次包含判定**,不猜、不看名字。
+     *   `File.base` 对不上(或 canonical 化失败)就退回老路 —— 退回是安全的:
+     *   老路最多是「取不到」,而**猜**是「取到了别的文件」,后者更糟。
+     */
+    private fun motionServeUrl(f: File): String {
+        val rel = try {
+            Wardrobe.motionLibraryDir(this)?.let { base ->
+                val prefix = base.canonicalPath + File.separator
+                val p = f.canonicalPath
+                if (p.startsWith(prefix)) {
+                    p.removePrefix(prefix).replace(File.separatorChar, '/')
+                } else {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            ModelManager.get(this).trace(
+                "动作库:算 ${f.name} 的取用地址出错(${e.javaClass.simpleName}: ${e.message})")
+            null
+        }
+
+        // ★ 第二道:这条相对路径要**当场过一遍白名单**才敢拼进 URL。
+        //   它其实进过 [Wardrobe.motionFile] 的同一道闸,但这里拼的是
+        //   **要给出去的那个字符串** —— 在这个项目里,给出去的字符串一律当场验一次。
+        if (rel != null && WardrobeMath.safeLibraryPath(rel)) return "motion-lib/$rel"
+
+        // 认不出 / 判不过 → 老路(裸文件名,给 motion/ 那套用)。
+        return f.name
     }
 
     /**
@@ -5503,10 +6715,30 @@ class ConMarnActivity : Activity() {
      *   计划里「点房间里的那台电脑进电脑页面」做出来之后,这条路仍然该留着 ——
      *   点连接状态去看/去连,本来就是它该有的意思。
      */
+    /**
+     * 进电脑页。
+     *
+     * ★★ 2026-10-08 加的那一句:连自动连都指望不上时,**落地就直接开始扫**。
+     *
+     * 起因是这一轮给自动连加的第一条闸:**盘上没有免密凭证就不自动拨**。
+     * 闸本身是对的(它掐的是配对码风暴),但它带出一个新的空洞 ——
+     * 新电脑、或者凭证已经没了的手机,点进电脑页会看到**一页空白**:
+     * 不自动连、也不提示、也不扫。而空白**和「坏了」长得一模一样**。
+     *
+     * 所以这里先问一句 [PcLink.willAutoConnect](只问,不动手):
+     *   - 会自动连 → 什么都不做,照老样子进页面,那趟自己会拨;
+     *   - 不会自动连 → 留一张「落地就扫」的便条([MainActivity.pendingScan])。
+     *     ★ 扫描是**用户明确发起**的连接,不受那几条自动连的闸管 —— 这正是闸想要的:
+     *     「别自作主张,**等他自己点一下**」,而这一下就是他点的。
+     */
     private fun openTouchpad() {
         try {
+            if (!PcLink.willAutoConnect(this)) MainActivity.pendingScan = true
             startActivity(Intent(this, MainActivity::class.java))
         } catch (e: Exception) {
+            // ❌ 便条要撕掉 —— 留着的话他下次正常进电脑页会莫名其妙开始扫描,
+            //    而且没有任何东西告诉他为什么(同 scanFromRoom 那条注释)。
+            MainActivity.pendingScan = false
             // 起不来要说出来 —— 静默失败的样子是「点了没反应」,和「点错地方」分不清
             ModelManager.get(this).trace("进电脑页面失败(${e.javaClass.simpleName}: ${e.message})")
             toast("打不开电脑页面:${e.message}")
@@ -5844,6 +7076,43 @@ class ConMarnActivity : Activity() {
          */
         private const val HER_HOST = "appassets.androidplatform.net"
         private const val HER_ORIGIN = "https://$HER_HOST/"
+
+        /**
+         * 动作库里那份文件的取用前缀(2026-10-09)—— **只在这个文件里用**。
+         *
+         * ★ 为什么不是一条新的 sheme / 新的域名:库里的文件和 `motion/` 那个一样,
+         *   都是**从 `serveAsset` 里读**的。它需要的只是「**一段能和别人分开的路径前缀**」,
+         *   而 `her/` 底下本来就是我们自己的地方 —— 不需要新的机制。
+         *
+         * ★★ **前缀里的 `her/` 不是装饰。** `serveAsset` 开头就有一道
+         *   `if (!path.startsWith("her/")) return null`;而且页面那边是用
+         *   `new URL(rel, document.baseURI)` 解析出来的,`baseURI` 是
+         *   `.../her/index.html` —— 所以「相对地址」天然就落在 `her/` 底下。
+         *   换成别的前缀,**那条 URL 永远不会打到这里**。
+         */
+        private const val LIB_PREFIX = "her/motion-lib/"
+
+        /**
+         * 挑动作那一栏的宽度(见 [motionPicker])。
+         *
+         * ★ 这个数**故意做窄**:它压在房间最右缘,而右缘那一格**会吃掉 WebGL 的手势**
+         *   (见 [scanBtn] 那段)。窄,就是这条代价唯一能压的地方。
+         *   要加宽,先回去看一眼 [WardrobeMath.motionLabel] 那批中文名会不会被切掉。
+         */
+        private val MOTION_PICKER_W = 96
+
+        /**
+         * 那一栏里「默认」那一行的键(见 [buildMotionPicker])。
+         *
+         * ★ 为什么是**空串**:库里的相对路径永远不可能是空的
+         *   (`WardrobeMath.safeLibraryPath` 第一句就把空串挡了),
+         *   所以空串天然是一个「外面不会撞上」的保留值 —— 不用另外发明一个哨兵。
+         *
+         * ★★ 「默认」这一行**必须存在**:他挑过之后总要能退回去。
+         *   没有它的话,一旦点过任何一条,`motion/` 那套就**再也回不来了** ——
+         *   而那条路是他自己铺的、东西还在盘上,只是界面上找不到回去的门。
+         */
+        private const val MOTION_ROW_DEFAULT = ""
 
         /**
          * 她出场之后隔多久拍那张人形。

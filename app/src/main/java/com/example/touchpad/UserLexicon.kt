@@ -36,9 +36,14 @@ import org.json.JSONObject
  */
 object UserLexicon {
 
-    private const val MAX_CALL = 3          // 他允许被叫的名字,最多记几个
-    private const val MAX_FIXES = 30        // 同音字映射,别让它无限长
-    private const val MAX_APPS = 40
+    // ★ 这三个数字**界面上要报**(「最多记 3 个」),所以不能再是 private。
+    internal const val MAX_CALL = 3         // 他允许被叫的名字,最多记几个
+    internal const val MAX_FIXES = 30       // 同音字映射,别让它无限长
+    internal const val MAX_APPS = 40
+
+    /** 手打一条的限长。和 [LexiconMath.looksLikeName] / `FIX` 那条正则的上限对齐。 */
+    internal const val MAX_NAME_LEN = 8
+    internal const val MAX_FIX_LEN = 12
 
     private var file: File? = null
     private val lock = Any()
@@ -122,6 +127,95 @@ object UserLexicon {
         return LexiconMath.block(s.call, s.avoid, s.apps, s.fixes)
     }
 
+    // ---- 记忆库:看 / 加 / 改 / 删(2026-10-08 他点名要的) ----
+    //
+    // 他原话:「可以随时删改它的记忆库 …… 本质上是能有一个训练它的本地入口」。
+    // 上面那三个入口(observe / noteApp / correct)是**她自己学**;这一段是他**手工教**。
+    //
+    // ★★ 所有手工编辑**只有一条写入口** = [edit]:读一份 → 改 → 整份写回。
+    //    每条各自 read-modify-write 才会出「改完 A 把 B 覆盖回去」那种账,
+    //    而这个文件写错的表现是「她突然开始胡说他是谁」——**不崩、不报错**,最难查。
+    //
+    // ★★ 「加进 call」必须同时从 avoid 划掉,反之亦然 —— 和 [observe] 里同一条规则。
+    //    两边都留着他一个名字,拼进提示词就成了「叫他小明」+「别叫他小明」,她只能瞎猜。
+    //
+    // ★★ 满了(in call 已 3 个 / fixes 已 30 条)**一律拒,不许悄悄挤掉最旧的那个**。
+    //    悄悄丢一条的后果是「我明明教过她,她怎么忘了」,而他根本不会往这儿想。
+
+    /** 界面看的那一份。null = 还没 [init] —— 调用方应当什么都不做,别去建文件。 */
+    fun snapshot(): Store? = file?.let { f -> synchronized(lock) { read(f) } }
+
+    // ★ 每个入口只做两件事:**清洗输入** + **交给 [LexiconMath] 里那条纯规则**。
+    //   判断本身一条都不留在这一层 —— 那层能跑 JVM 单测,这层不能。
+
+    /** 加一个「你可以这么叫我」。已经在里面 / 已经 3 个 / 太长 → false。 */
+    fun addCall(raw: String): Boolean {
+        val f = file ?: return false
+        val n = LexiconMath.clean(raw, MAX_NAME_LEN) ?: return false
+        return edit(f) { LexiconMath.addCall(it, n) }
+    }
+
+    /** 删掉一个允许的叫法。传 UI 上原样那个字 —— **不做清洗**,否则存进去的怪东西删不掉。 */
+    fun removeCall(name: String): Boolean {
+        val f = file ?: return false
+        return edit(f) { LexiconMath.removeCall(it, name) }
+    }
+
+    /** 加一个「别这么叫我」。已经在里面 / 满了 / 太长 → false。 */
+    fun addAvoid(raw: String): Boolean {
+        val f = file ?: return false
+        val n = LexiconMath.clean(raw, MAX_NAME_LEN) ?: return false
+        return edit(f) { LexiconMath.addAvoid(it, n) }
+    }
+
+    fun removeAvoid(name: String): Boolean {
+        val f = file ?: return false
+        return edit(f) { LexiconMath.removeAvoid(it, name) }
+    }
+
+    /**
+     * 改一条「他常让你开的应用」。
+     *
+     * ★ 次数是**她数出来的**,不是他编的 —— 但允许他改,因为那是他的账本:
+     *   记歪了(比如「微信」被记成 8 次)他能自己抹平,不用等我改代码。
+     * `times <= 0` = 删掉这一条。
+     */
+    fun setApp(raw: String, times: Int): Boolean {
+        val f = file ?: return false
+        val n = LexiconMath.clean(raw, MAX_NAME_LEN) ?: return false
+        return edit(f) { LexiconMath.setApp(it, n, times) }
+    }
+
+    /**
+     * 加/改一条同音字纠正。`bad` 已经在 → **改它指向谁**。
+     *
+     * ★ 校验用 [LexiconMath.clean] 而**不是** `looksLikeName`:`bad` 常常就是一句
+     *   识别错的怪话(「威信」这种),拿名字那套规则去挡,只会把要修的东西挡在门外。
+     */
+    fun putFix(rawBad: String, rawGood: String): Boolean {
+        val f = file ?: return false
+        val bad = LexiconMath.clean(rawBad, MAX_FIX_LEN) ?: return false
+        val good = LexiconMath.clean(rawGood, MAX_FIX_LEN) ?: return false
+        return edit(f) { LexiconMath.putFix(it, bad, good) }
+    }
+
+    fun removeFix(bad: String): Boolean {
+        val f = file ?: return false
+        return edit(f) { LexiconMath.removeFix(it, bad) }
+    }
+
+    /**
+     * ★ 唯一的写入口。`change` 回 null = 「这条改动不该发生」(重复 / 满了 / 没这条),
+     * 那就**一个字都不写盘**;回来的和原来一样也算没改(省一次闪存写)。
+     */
+    private fun edit(f: File, change: (Store) -> Store?): Boolean = synchronized(lock) {
+        val before = read(f)
+        val after = change(before) ?: return false
+        if (after == before) return false
+        write(f, after)
+        true
+    }
+
     // ---- 落盘(原子写,和 MoodStore / ExperienceStore 同一套) ----
 
     private fun read(f: File): Store = try {
@@ -203,6 +297,69 @@ internal object LexiconMath {
 
     internal fun looksLikeName(s: String): Boolean =
         s.isNotBlank() && s.length <= 8 && NOT_IN_NAME.none { s.contains(it) }
+
+    /**
+     * 他自己在记忆库里手打的一条 —— 只做**去空白 + 限长**,回 null = 这条不能收。
+     *
+     * ★★ 故意**不套 [looksLikeName]**。那一套是用来从**一整句话**里猜的,防的是
+     *    「我妈叫我吃饭」把「吃饭」记成名字;而他手打的那几个字**是他本人的定义**,
+     *    再拿猜话的那套去挡,只会把正当的东西挡在门外(「别叫我老李头」这种)。
+     *    **猜话要严,他说的要松** —— 两边搞反了,这个功能就变成了一个「点了没反应」的按钮。
+     */
+    internal fun clean(raw: String, maxLen: Int): String? {
+        val s = raw.trim()
+        return if (s.isEmpty() || s.length > maxLen) null else s
+    }
+
+    // ---- 记忆库手工编辑(2026-10-08)----
+    //
+    // ★ 一律**回 null = 这改动不该发生**(重复 / 满了 / 压根没这条),调用方一个字都不落盘。
+    //   把这些判据放在这儿而不是 `UserLexicon` 里,是因为它们必须能被 JVM 单测钉住 ——
+    //   判错了在真机上的表现是「她开始胡说他是谁」或「我明明教过她,她怎么忘了」,
+    //   **不崩、不报错**,事后根本查不出来。
+
+    internal fun addCall(s: UserLexicon.Store, n: String): UserLexicon.Store? = when {
+        n in s.call -> null                                    // 已经有了
+        s.call.size >= UserLexicon.MAX_CALL -> null            // ★ 满了就拒,不挤掉最旧的那个
+        // ★ 和 observe 同一条:两个名单不能同时留一个名字,
+        //   否则提示词里就成了「叫他小明」+「别叫他小明」,她只能瞎猜。
+        else -> s.copy(call = s.call + n, avoid = s.avoid.filterNot { it == n })
+    }
+
+    internal fun removeCall(s: UserLexicon.Store, name: String): UserLexicon.Store? =
+        if (name in s.call) s.copy(call = s.call.filterNot { it == name }) else null
+
+    internal fun addAvoid(s: UserLexicon.Store, n: String): UserLexicon.Store? = when {
+        n in s.avoid -> null
+        s.avoid.size >= UserLexicon.MAX_CALL -> null
+        else -> s.copy(avoid = s.avoid + n, call = s.call.filterNot { it == n })
+    }
+
+    internal fun removeAvoid(s: UserLexicon.Store, name: String): UserLexicon.Store? =
+        if (name in s.avoid) s.copy(avoid = s.avoid.filterNot { it == name }) else null
+
+    internal fun setApp(s: UserLexicon.Store, n: String, times: Int): UserLexicon.Store? {
+        val apps = LinkedHashMap(s.apps)
+        if (times <= 0) apps.remove(n) else apps[n] = times
+        return when {
+            apps == s.apps -> null
+            apps.size > UserLexicon.MAX_APPS -> null           // 满了:先删一条,或者改现成的
+            else -> s.copy(apps = apps)
+        }
+    }
+
+    internal fun putFix(s: UserLexicon.Store, bad: String, good: String): UserLexicon.Store? {
+        // 自己指自己 = 白学一条,而且让 correct() 空转(它每轮都要过一遍全部映射)
+        if (bad == good) return null
+        val fixes = LinkedHashMap(s.fixes)
+        if (fixes[bad] == good) return null                    // 一模一样,没什么可改
+        if (bad !in fixes && fixes.size >= UserLexicon.MAX_FIXES) return null
+        fixes[bad] = good
+        return s.copy(fixes = fixes)
+    }
+
+    internal fun removeFix(s: UserLexicon.Store, bad: String): UserLexicon.Store? =
+        if (bad in s.fixes) s.copy(fixes = s.fixes.filterKeys { it != bad }) else null
 
     // 「叫我小明」「以后叫我小明」「你可以叫我小明」「我叫小明」「就叫我老王」
     //

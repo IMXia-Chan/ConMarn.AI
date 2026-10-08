@@ -41,6 +41,14 @@ class AiAgent(private val client: TouchpadClient) {
         var cloudBaseUrl: String = "https://api.deepseek.com",  // 空 = 不启用兜底
         var cloudModel: String = "deepseek-chat",
         var cloudApiKey: String = "",                           // 空 = 不启用兜底
+        // ★★ 2026-10-09:兜底的**总开关**。以前「关掉云端」只有一条路 —— 把 key 删空,
+        //   而 key 删了下次想用还得重新找回来。这一条让它变成一个能来回拨的钮
+        //   (她房间的 ⚙ 里那一行「云端兜底」)。
+        //
+        //   ★ 默认 **true** —— 有 key 的人行为和以前**一个字都不差**,这不是新功能上线。
+        //   ★ 它和 key 是**两把锁,串着**的:两个都开才出手机。谁少一个都不发。
+        //     (所以「有 key 但开关关了」是合法状态 —— 那正是他要的那个位置。)
+        var cloudOn: Boolean = true,
         // 本地多久没回就转云端。**这个值决定了「到底走本地还是走云端」**。
         //
         // 这个超时最初是为 Termux 被「应用速冻」设计的:那时模型是别的 App,冻住后
@@ -1608,6 +1616,53 @@ class AiAgent(private val client: TouchpadClient) {
             retryFind(args, cb)?.let { return it }
         }
 
+        // ------------------------------------------------------------------
+        // ★★ 「关窗口」这类词:到此为止,不许再往下走(2026-10-08 用户报的那个 bug)。
+        //
+        // 再往下那一整条梯子(scroll / search / visual)全都是**在这个界面里找一行字**,
+        // 而「关闭 / 退出」不是字,是**对窗口本身下的手** —— 那个应用里根本没有一样东西
+        // 叫这个名字。其中 `search` 最坏:它**真的会把这两个字打进这个应用的搜索框**
+        // (普通应用 Ctrl+F、浏览器走地址栏)。用户看到的就是这个:
+        //
+        //   > 「关微信的时候,我让她关微信她就在搜索框中关微信」
+        //
+        // 而且这条路还会**报成功**(刚打进去的那行字被 retryFind 当成了命中),
+        // 于是 `ExperienceStore.record(exp, true)` 把这条坏策略的置信度**越养越高**
+        // (真机日志:88% → 89%)。所以它不只是绕远路,它在**污染「越用越强」那套账**。
+        //
+        // ★ 判据是纯逻辑,在 [MissMath] 里,两个方向都钉了测试。
+        // ★ 放在「先直接再看一眼」**之后**:那一眼是对的(窗口刚顶到前台还没画完),
+        //   它不依赖任何策略,而且真机日志里它从来没赢过是靠运气 —— 留着的成本只有一秒。
+        // ★ 这里**不记经验、也不问老师**:没试过的不算输,而老师教的也只会是
+        //   「换个办法在界面里找」—— 那正是走不通的那件事。
+        //
+        // ★★ 2026-10-08 用户拍板:**给了她「关窗口」这个动作**。
+        //    这里不再回「我关不了」,而是**指路** —— 让她改用 hotkey(keys="alt+f4")。
+        //
+        // 为什么是「指路」而不是「这里顺手替她按了」:
+        //   ① 这一层是 `click_ui` 找不到东西之后的兜底。用户喊的那句可能是「关闭」
+        //      (整个窗口),也可能是别的一个也叫「关闭」的东西 —— **在这儿直接按 Alt+F4
+        //      等于替她拍板关掉整个窗口**,那是越权;指路则让她自己看着回执决定。
+        //   ② 回执就在这一轮里回去,她下一步就能改口,不多绕路。
+        // ★ 能力那一刀在电脑那边(`ai_tools.py` 的白名单:alt 进修饰键、f4 进按键),见那儿。
+        // ------------------------------------------------------------------
+        if (MissMath.isWindowCommand(name)) {
+            cb.onLog("「$name」是关窗口,不是这一屏上找得到的字 —— 改用 hotkey(alt+f4)")
+            return JSONObject().put("ok", false)
+                .put(
+                    "error",
+                    "「$name」是个**窗口动作**,不是这个界面里的一行字 —— 拿它去搜是搜不到的," +
+                        "只会把这两个字打进这个应用自己的搜索框里,窗口照样不会关。"
+                )
+                .put(
+                    "hint",
+                    "关窗口得在**窗口那一层**下手,跟界面里有什么字无关:" +
+                        "**改用 hotkey(keys=\"alt+f4\")**,一下就把最前面那个窗口关掉。" +
+                        "别再拿这个词去 search / click_ui 了。"
+                )
+                .put("observation", obs)
+        }
+
         // 「看图」实测 215 秒 —— 整个任务里最多花一次。这不是省钱的考虑:
         // 花第二次的时候,第一次已经证明「看这一屏」没用,再花一遍还是没用。
         var visualBudget = 1
@@ -1651,7 +1706,13 @@ class AiAgent(private val client: TouchpadClient) {
 
         // 都不灵 → 问老师。顺序反过来也合用户的原话:「一次调用云端,下一次就不用跑」——
         // 教材能办的事不该花云端那一趟;问了就记下来,往后都是查表。
-        if (shouldAskTeacher(tried)) {
+        //
+        // ★★ 但有一趟是**明知白问的**:老师已经教过这个 kind,而那条被他标了
+        //    「这条别再要了」。老师是照「观察」教的 —— 同样的观察,它就会教出同样一条。
+        //    再去问一遍 = 花一次钱,回来还是原样拒一次。
+        // ★ 只管**老师给的那条**;把预置教材禁掉不代表老师那条不要(那种该照旧去问,
+        //   可能是真的没别的办法了)—— 所以判据是 [ExperienceStore.teacherMuted] 而不是 `has`。
+        if (shouldAskTeacher(tried) && !ExperienceStore.teacherMuted(kind)) {
             askTeacher(obs, name, cb)?.let { fresh ->
                 // 老师要是又说了一遍刚试过的老一套,就没有再试的必要(learn 会去重)。
                 if (fresh !in tried) attempt(listOf(fresh))?.let { return it }
@@ -1742,6 +1803,14 @@ class AiAgent(private val client: TouchpadClient) {
      * @return 教会的经验(已存库);没配 key / 云端失败 / 答得不合规 → null(退回预置教材)。
      */
     private fun askTeacher(obs: JSONObject, name: String, cb: Callback): ExperienceStore.Exp? {
+        // ★★ 2026-10-09:两道门,和 [chat] 那条兜底**同一个开关** —— 「云端关掉」就该是
+        //   「一个字节都不出手机」,而不是「聊天不发了、界面结构还照发」。
+        //   ★ 这两句分开写是因为**它们是两件事**:没 key 是「没配」,开关关着是「你不让它发」。
+        //     合成一句的话,他关了云端之后会看到「没配云端 Key」—— 那是在说反话。
+        if (!config.cloudOn) {
+            cb.onLog("(云端关着,用预置经验;想让它自己学,去设置里把「云端兜底」打开)")
+            return null
+        }
         if (config.cloudApiKey.isEmpty()) {
             // 没配 key 不是错误:预置教材照样能用,只是这次不学新东西。
             cb.onLog("(没配云端 Key,用预置经验;配上之后它会自己学)")
@@ -1820,7 +1889,13 @@ class AiAgent(private val client: TouchpadClient) {
             else (0 until arr.length()).mapNotNull { jsonText(arr.opt(it)) }
             val e = ExperienceStore.learn(kind, verbs, jo.optString("reason"))
             if (e == null) {
-                cb.onLog("老师给的动词不在允许范围内($verbs),没有记 —— 只认 ${ExperienceStore.VERBS}")
+                // ★ null 有两个来源,**必须分开说** —— 否则回执会把「你自己不让它学」
+                //   说成「老师教错了」,那是同一件事说错,比不说更坏。
+                if (ExperienceStore.isMuted(kind, verbs)) {
+                    cb.onLog("老师又说了一遍「$kind」的这套做法,但**你已经把这条设成「别再要了」** —— 没记。")
+                } else {
+                    cb.onLog("老师给的动词不在允许范围内($verbs),没有记 —— 只认 ${ExperienceStore.VERBS}")
+                }
             } else {
                 cb.onLog("老师教了一条「$kind」:${e.verbs.joinToString(" → ")} —— 记下了,下次直接用")
             }
@@ -2149,7 +2224,14 @@ class AiAgent(private val client: TouchpadClient) {
         val url = baseUrl.trimEnd('/') + "/v1/chat/completions"
 
         // ---- 有云端可退:本地这一轮**没资格上场**就直奔云端,绝不拿用户的时间去试 ----
-        if (allowCloud && config.cloudApiKey.isNotEmpty()) {
+        //
+        // ★★ 2026-10-09:闸门是**两把锁串着** —— `cloudOn`(他自己拨的钮)和 key。
+        //   少任何一个,这条 if 整段不成立,于是直接落到下面「没有云端」那一段:
+        //   本地拿满 `readTimeoutMs`(= llmTimeoutMs,120 秒)、**不再有 8 秒首 token 闸**,
+        //   而且**一个字节都不会出手机**。这就是他要的那个位置。
+        //   ⚠️ 代价要记住:关掉之后本地真卡住的话,他要等满 120 秒才看到报错
+        //   (有云端时 8 秒就转走了)—— 这是他选的取舍,不是我漏了。
+        if (allowCloud && config.cloudOn && config.cloudApiKey.isNotEmpty()) {
             // ★★ 两种情况本地这一轮**必然**给不出答案,一律跳过(见 [localBadUntil]):
             //   · 预热还在跑 —— 前缀铁定没算完,放出去的请求只会排在预热后面
             //     把 deadline 耗光,然后**谎报**「本地没响应」;
@@ -2241,9 +2323,11 @@ class AiAgent(private val client: TouchpadClient) {
             } catch (e: ModelLoadingException) {
                 if (waitedMs >= LOADING_WAIT_MAX_MS) {
                     throw IOException(
-                        "模型等了 ${LOADING_WAIT_MAX_MS / 1000} 秒还没加载完。" +
-                            "去 Termux 里敲 ps aux | grep llama-server 看看还在不在 —— " +
-                            "进程没了就是系统杀了,重跑 ~/start-ai.sh 就行。" +
+                        "模型等了 ${LOADING_WAIT_MAX_MS / 1000} 秒还没加载完" +
+                            "(进程活着、一直在回「正在加载」,是读模型读得太慢)。" +
+                            "最常见的原因是手机太热被降频 —— 拔掉充电线、凉一会儿再试。" +
+                            "还不行就打开 Android/media/com.example.touchpad/model.log " +
+                            "看最后几行,那儿有原因。" +
                             "(在设置里填个云端 API Key 就不用等它了)"
                     )
                 }
@@ -2792,6 +2876,12 @@ class AiAgent(private val client: TouchpadClient) {
                 cloudBaseUrl = sp.getString("cloudBaseUrl", d.cloudBaseUrl)!!,
                 cloudModel = sp.getString("cloudModel", d.cloudModel)!!,
                 cloudApiKey = sp.getString("cloudApiKey", d.cloudApiKey)!!,
+                // ★ 读法**故意不走 CONFIG_VERSION**:那个版本闸是给「代码里默认值改过、
+                //   老 prefs 会盖住新默认」准备的(见上面两段)。这里没有那个问题 ——
+                //   盘上没有这一项就是「从没拨过」,默认 true = 和以前一模一样。
+                //   ★ 也**故意不拿 cloudApiKey 反推**:反推的话「有 key 但关了」就存不下来,
+                //     他一开一关白忙一场 —— 那正是这个开关要解决的问题。
+                cloudOn = sp.getBoolean("cloudOn", d.cloudOn),
                 localDeadlineMs = deadline,
                 maxSteps = steps,
                 toolTimeoutMs = sp.getLong("toolTimeoutMs", d.toolTimeoutMs),
@@ -2813,6 +2903,7 @@ class AiAgent(private val client: TouchpadClient) {
                 putString("cloudBaseUrl", c.cloudBaseUrl)
                 putString("cloudModel", c.cloudModel)
                 putString("cloudApiKey", c.cloudApiKey)
+                putBoolean("cloudOn", c.cloudOn)
                 putLong("localDeadlineMs", c.localDeadlineMs)
                 putInt("configVersion", CONFIG_VERSION)
                 putInt("maxSteps", c.maxSteps)
@@ -2891,7 +2982,10 @@ ConMarn 这个名字是他亲手取的,对他有很特别的意义。你珍视�
   打开微信 → open_app(name=微信)      现在开着什么 → get_state()
   切到 Chrome → focus_window(title=Chrome)
   下一首 / 声音大一点 → media(action=next / volume_up)
-  点开始菜单 / 点一下发送 / 帮我点关闭 → click_ui(name=开始 / 发送 / 关闭)
+  点开始菜单 / 点一下发送 → click_ui(name=开始 / 发送)
+  ★ 关掉这个窗口 / 关微信 / 退出这个程序 → hotkey(keys=alt+f4)   ← **不是 click_ui**
+     (「关闭」是**对窗口本身下的手**,那个应用里根本没有一行字叫这个名字;
+      拿它去 click_ui 或者 search,只会把「关闭」两个字打进那个应用自己的搜索框里)
   在输入框打 hello world → type(text=hello world)
   回车确认 → hotkey(keys=enter)        在页面里查找「设置」 → hotkey(keys=ctrl+f)
   往下翻一屏 → scroll(direction=down)  在很长的列表里找一个 → search(query=要找的词)
@@ -3218,8 +3312,9 @@ private val TOOL_SCHEMA = JSONArray().apply {
         listOf("description")
     )
     fn(
-        "hotkey", "按键,如 enter、esc、ctrl+f。enter 是提交键,发消息的最后一步就是它",
-        JSONObject().put("keys", p("如「enter」「ctrl+f」")),
+        "hotkey", "按键,如 enter、esc、ctrl+f,或用 alt+f4 **关掉当前窗口**。" +
+                "要关窗口/退出应用就用 alt+f4,别拿「关闭」去点、去搜",
+        JSONObject().put("keys", p("如「enter」「ctrl+f」「alt+f4」")),
         listOf("keys")
     )
     fn(
