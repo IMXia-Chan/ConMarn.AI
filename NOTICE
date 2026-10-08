@@ -1,0 +1,81 @@
+ConMarn
+Copyright 2026 IMXia-Chan
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full text.
+
+================================================================================
+第三方组件归属声明(Apache License 2.0 第 4 条)
+================================================================================
+
+ConMarn 分发了下列以 Apache-2.0 授权的第三方源码。按 Apache-2.0 第 4(d) 条,
+它们的归属声明随本文件一并提供。
+
+--------------------------------------------------------------------------------
+1. sherpa-onnx —— Kotlin API
+--------------------------------------------------------------------------------
+
+  文件:  app/src/main/java/com/k2fsa/sherpa/onnx/*.kt            (22 个文件)
+  来源:  https://github.com/k2-fsa/sherpa-onnx  (kotlin-api/,锁定 v1.13.8)
+  许可:  Apache License 2.0
+  版权:  Copyright (c) 2023 Xiaomi Corporation
+         Copyright (c) 2024 Xiaomi Corporation
+
+  ★ 上游这 22 个文件里只有 4 个带版权头,其余 18 个没有 ——
+    所以归属声明由本文件统一承担,而不是靠每个文件自己带。
+
+  ★ 目录与包名 com.k2fsa.sherpa.onnx 原样保留(也请勿改动):
+    JNI 按类名注册 native 方法,改名会导致运行时 UnsatisfiedLinkError。
+
+  完整许可文本: https://github.com/k2-fsa/sherpa-onnx/blob/master/LICENSE
+
+--------------------------------------------------------------------------------
+2. AndroidX (androidx.core:core-ktx)
+--------------------------------------------------------------------------------
+
+  用途:  作为依赖由 Gradle 拉取,不随本仓库分发源码
+  来源:  https://github.com/androidx/androidx
+  许可:  Apache License 2.0
+  版权:  Copyright (C) The Android Open Source Project
+
+  完整许可文本: https://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+3. zxing-android-embedded
+--------------------------------------------------------------------------------
+
+  用途:  扫码配对  (com.journeyapps:zxing-android-embedded:4.3.0)
+  来源:  https://github.com/journeyapps/zxing-android-embedded
+  许可:  Apache License 2.0
+  版权:  Copyright (C) 2012-2024 ZXing Authors
+         Copyright (C) 2012-2024 JourneyApps
+
+  完整许可文本: https://www.apache.org/licenses/LICENSE-2.0
+
+================================================================================
+以宽松许可(MIT / BSD 等)授权、但同样被分发的组件
+================================================================================
+
+这些不要求进 Apache-2.0 的 NOTICE,列在这里只是给读者一条线索。
+逐项明细(含未随仓库分发的原生库与模型)见 THIRD_PARTY.md。
+
+  three.js                        MIT    Copyright 2010-2025 Three.js Authors
+  @pixiv/three-vrm                MIT    Copyright (c) 2019-2026 pixiv Inc.
+  llama.cpp                       MIT    https://github.com/ggml-org/llama.cpp
+  Microsoft onnxruntime           MIT    https://github.com/microsoft/onnxruntime
+
+  ★ 前两条**已经编译进** app/src/main/assets/her/her.bundle.js,
+    它们的版权行就在该产物的末尾(esbuild 保留了 legal comment)。
+
+================================================================================
+没有随本仓库分发的东西
+================================================================================
+
+以下内容**不在本仓库内**,因此其许可证与本 NOTICE 无关,
+但它们各自的授权仍需遵守:
+
+  · 模型权重 —— 脑 / 眼 / 耳 / 嗓 / 房间,见 README 第四节
+  · jniLibs 下的原生库(.so),见 THIRD_PARTY.md 第一节
+  · VRM 人物模型 —— 本仓库不含任何 VRM,请自备
+  · pc-server 的可选 Python 依赖 —— 由使用者自行安装,
+    其中 pyvirtualcam 是 GPL-2.0(详见 THIRD_PARTY.md 第 C4 节)

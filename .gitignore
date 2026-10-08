@@ -1,0 +1,53 @@
+# ---- Android / Gradle 构建产物 ----
+*.iml
+.gradle/
+.idea/
+.kotlin/
+build/
+local.properties
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ---- Python ----
+__pycache__/
+*.pyc
+dist/
+*.spec
+
+# ---- 敏感/运行时生成,绝不入库 ----
+# 认证种子(DPAPI 加密)与登录 PIN 校验值:首次配对/首次运行自动生成,见 README「彻底重新配对」
+pc-server/secret.json
+pc-server/master.json
+
+# 运行日志(含配对码、IP、遥测)
+*.log
+pc-server/server.log
+
+# ---- 签名密钥(分发用,绝不入库) ----
+*.jks
+*.keystore
+keystore.properties
+
+# ---- 本地调试/诊断产物 ----
+phone_log.txt
+screen.png
+pc-server/phone_logcat*.txt
+pc-server/_diag_*
+pc-server/_test_vcam.py
+pc-server/_read_lnk.ps1
+
+# ---- 本机专用启动/调试脚本(含绝对路径,不入库) ----
+pc-server/start_background.bat
+pc-server/media_panel.bat
+pc-server/phone_mimic.py
+
+# ---- her-src/(她的房间 web 层)构建产物 ----
+her-src/node_modules/
+her-src/her.bundle.js
+
+# 自己放 .vrm 的地方(模型不进仓库)
+vrm/
+# 内置那份的脸也不进仓库(见 app/src/main/assets/her/README.txt 第二条)
+sample.vrm
