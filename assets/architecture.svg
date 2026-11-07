@@ -1,0 +1,196 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="850" viewBox="0 0 1200 850" font-family="'Microsoft YaHei','PingFang SC','Noto Sans CJK SC',sans-serif">
+  <defs>
+    <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6E79FF"/>
+    </marker>
+    <radialGradient id="glow" cx="0.16" cy="0.0" r="0.85">
+      <stop offset="0" stop-color="#6E79FF" stop-opacity="0.09"/>
+      <stop offset="0.55" stop-color="#6E79FF" stop-opacity="0.018"/>
+      <stop offset="1" stop-color="#6E79FF" stop-opacity="0"/>
+    </radialGradient>
+    <style>
+      .band   { fill:#0D0D12; stroke:#23232B; stroke-width:1; }
+      .bandp  { fill:#0C0C11; stroke:#23232B; stroke-width:1; }
+      .bandc  { fill:#0A0A0D; stroke:#2A2A33; stroke-width:1; stroke-dasharray:4 5; }
+      .chip   { fill:#14141B; stroke:#26262E; stroke-width:1; }
+      .railbg { fill:#101015; }
+      .t      { font-size:15px;   fill:#E8E8EC; font-weight:600; }
+      .s      { font-size:11.5px; fill:#7B7B89; }
+      .band-l { font-size:14px;   fill:#D2D2DA; font-weight:700; letter-spacing:.3px; }
+      .band-s { font-size:11.5px; fill:#68686F; }
+      .rail   { font-size:13px;   fill:#8E8E9C; font-weight:700; }
+      .rail-s { font-size:9.5px;  fill:#4C4C58; letter-spacing:1px; }
+      .note   { font-size:11.5px; fill:#6A6A78; }
+      .acc    { stroke:#6E79FF; stroke-width:2; stroke-linecap:round; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="850" fill="#08080A"/>
+  <rect width="1200" height="850" fill="url(#glow)"/>
+
+  <text x="56" y="45" font-size="20" font-weight="700" fill="#F0F0F3">基于端侧大模型的本地优先多智能体协同与跨设备执行系统</text>
+  <text x="56" y="69" font-size="12" fill="#6A6A78" letter-spacing=".2">ConMarn 程序架构 · v3.1 · 2026-11-07 · 推理、语音与记忆均在设备本地运行，电脑仅承担执行，外部服务默认关闭</text>
+
+  <!-- ================= 手机 ================= -->
+  <rect class="band" x="40" y="84" width="1120" height="416" rx="12"/>
+  <line class="acc" x1="56" y1="99" x2="84" y2="99"/>
+  <text class="band-l" x="56" y="118">Android 手机（Android 11+ · arm64-v8a）</text>
+  <text class="band-s" x="1144" y="118" text-anchor="end">推理与记忆在本机 · 执行范围可延伸至局域网内的电脑</text>
+
+  <!-- 表现层 -->
+  <rect class="railbg" x="56" y="134" width="92" height="76" rx="7"/>
+  <text class="rail" x="102" y="168" text-anchor="middle">表现层</text>
+  <text class="rail-s" x="102" y="186" text-anchor="middle">VIEW</text>
+
+  <g>
+    <rect class="chip" x="158" y="134" width="186" height="76" rx="8"/>
+    <text class="t" x="251" y="165" text-anchor="middle">角色视窗</text>
+    <text class="s" x="251" y="185" text-anchor="middle">WebView · three.js · VRM</text>
+
+    <rect class="chip" x="358" y="134" width="186" height="76" rx="8"/>
+    <text class="t" x="451" y="165" text-anchor="middle">多智能体工作台</text>
+    <text class="s" x="451" y="185" text-anchor="middle">分屏 · 多任务并行</text>
+
+    <rect class="chip" x="558" y="134" width="186" height="76" rx="8"/>
+    <text class="t" x="651" y="165" text-anchor="middle">触控板 · 投屏</text>
+    <text class="s" x="651" y="185" text-anchor="middle">手势输入 · 屏幕取景</text>
+
+    <rect class="chip" x="758" y="134" width="186" height="76" rx="8"/>
+    <text class="t" x="851" y="165" text-anchor="middle">状态看板</text>
+    <text class="s" x="851" y="185" text-anchor="middle">双指下滑 · 本机数据</text>
+
+    <rect class="chip" x="958" y="134" width="186" height="76" rx="8"/>
+    <text class="t" x="1051" y="165" text-anchor="middle">浮动入口</text>
+    <text class="s" x="1051" y="185" text-anchor="middle">常驻悬浮球 · 语音状态</text>
+  </g>
+
+  <!-- 编排层 -->
+  <rect class="railbg" x="56" y="224" width="92" height="76" rx="7"/>
+  <text class="rail" x="102" y="258" text-anchor="middle">编排层</text>
+  <text class="rail-s" x="102" y="276" text-anchor="middle">ORCHESTRATE</text>
+
+  <g>
+    <rect class="chip" x="158" y="224" width="186" height="76" rx="8"/>
+    <text class="t" x="251" y="255" text-anchor="middle">AiAgent</text>
+    <text class="s" x="251" y="275" text-anchor="middle">对话循环 · 工具派发</text>
+
+    <rect class="chip" x="358" y="224" width="186" height="76" rx="8"/>
+    <text class="t" x="451" y="255" text-anchor="middle">AgentBus</text>
+    <text class="s" x="451" y="275" text-anchor="middle">事件账本 · 只追加</text>
+
+    <rect class="chip" x="558" y="224" width="186" height="76" rx="8"/>
+    <text class="t" x="651" y="255" text-anchor="middle">WorkJob</text>
+    <text class="s" x="651" y="275" text-anchor="middle">任务档案 · 多轮 · 归档</text>
+
+    <rect class="chip" x="758" y="224" width="186" height="76" rx="8"/>
+    <text class="t" x="851" y="255" text-anchor="middle">技能库</text>
+    <text class="s" x="851" y="275" text-anchor="middle">SKILL.md · 可重放</text>
+
+    <rect class="chip" x="958" y="224" width="186" height="76" rx="8"/>
+    <text class="t" x="1051" y="255" text-anchor="middle">经验库</text>
+    <text class="s" x="1051" y="275" text-anchor="middle">观察 → 复用 → 记忆</text>
+  </g>
+
+  <!-- 执行层 -->
+  <rect class="railbg" x="56" y="314" width="92" height="76" rx="7"/>
+  <text class="rail" x="102" y="348" text-anchor="middle">执行层</text>
+  <text class="rail-s" x="102" y="366" text-anchor="middle">ACT</text>
+
+  <g>
+    <rect class="chip" x="158" y="314" width="186" height="76" rx="8"/>
+    <text class="t" x="251" y="345" text-anchor="middle">本机执行</text>
+    <text class="s" x="251" y="365" text-anchor="middle">应用 · 闹钟 · 剪贴板</text>
+
+    <rect class="chip" x="358" y="314" width="186" height="76" rx="8"/>
+    <text class="t" x="451" y="345" text-anchor="middle">电脑执行</text>
+    <text class="s" x="451" y="365" text-anchor="middle">14 个具名工具</text>
+
+    <rect class="chip" x="558" y="314" width="186" height="76" rx="8"/>
+    <text class="t" x="651" y="345" text-anchor="middle">沙盒</text>
+    <text class="s" x="651" y="365" text-anchor="middle">Alpine + busybox · 本地</text>
+
+    <rect class="chip" x="758" y="314" width="186" height="76" rx="8"/>
+    <text class="t" x="851" y="345" text-anchor="middle">文档生成</text>
+    <text class="s" x="851" y="365" text-anchor="middle">md · 表格 · PPT</text>
+
+    <rect class="chip" x="958" y="314" width="186" height="76" rx="8"/>
+    <text class="t" x="1051" y="345" text-anchor="middle">连接器</text>
+    <text class="s" x="1051" y="365" text-anchor="middle">API · MCP · OAuth · 目录</text>
+  </g>
+
+  <!-- 模型层 -->
+  <rect class="railbg" x="56" y="404" width="92" height="76" rx="7"/>
+  <text class="rail" x="102" y="438" text-anchor="middle">模型层</text>
+  <text class="rail-s" x="102" y="456" text-anchor="middle">MODEL</text>
+
+  <g>
+    <rect class="chip" x="158" y="404" width="186" height="76" rx="8"/>
+    <text class="t" x="251" y="435" text-anchor="middle">推理引擎</text>
+    <text class="s" x="251" y="455" text-anchor="middle">llama-server · 127.0.0.1</text>
+
+    <rect class="chip" x="358" y="404" width="186" height="76" rx="8"/>
+    <text class="t" x="451" y="435" text-anchor="middle">视觉定位</text>
+    <text class="s" x="451" y="455" text-anchor="middle">按需加载 · 末级手段</text>
+
+    <rect class="chip" x="558" y="404" width="186" height="76" rx="8"/>
+    <text class="t" x="651" y="435" text-anchor="middle">语音链路</text>
+    <text class="s" x="651" y="455" text-anchor="middle">KWS · VAD · ASR · TTS</text>
+
+    <rect class="chip" x="758" y="404" width="186" height="76" rx="8"/>
+    <text class="t" x="851" y="435" text-anchor="middle">前缀快照</text>
+    <text class="s" x="851" y="455" text-anchor="middle">685,325 ms → 434 ms</text>
+
+    <rect class="chip" x="958" y="404" width="186" height="76" rx="8"/>
+    <text class="t" x="1051" y="435" text-anchor="middle">本地存储</text>
+    <text class="s" x="1051" y="455" text-anchor="middle">模型 · 素材 · 记忆 · 日志</text>
+  </g>
+
+  <!-- ================= 连接 ================= -->
+  <line x1="588" y1="506" x2="588" y2="558" stroke="#6E79FF" stroke-width="1.5" marker-end="url(#arw)"/>
+  <line x1="612" y1="558" x2="612" y2="506" stroke="#6E79FF" stroke-width="1.5" marker-end="url(#arw)"/>
+  <text class="note" x="640" y="524">加密通道 · 逐条校验（下行 = 执行指令）</text>
+  <text class="note" x="640" y="546">局域网内自动发现 · 仅限同一网段（上行 = 感知与事件）</text>
+
+  <!-- ================= 电脑 ================= -->
+  <rect class="bandp" x="40" y="566" width="1120" height="150" rx="12"/>
+  <line class="acc" x1="56" y1="581" x2="84" y2="581"/>
+  <text class="band-l" x="56" y="600">Windows 电脑（Python 服务 · 无第三方框架依赖）</text>
+  <text class="band-s" x="1144" y="600" text-anchor="end">执行端：可操作鼠标键盘，操作范围受权限边界约束</text>
+
+  <g>
+    <rect class="chip" x="158" y="614" width="186" height="76" rx="8"/>
+    <text class="t" x="251" y="645" text-anchor="middle">配对与鉴权</text>
+    <text class="s" x="251" y="665" text-anchor="middle">设备绑定 · 会话校验</text>
+
+    <rect class="chip" x="358" y="614" width="186" height="76" rx="8"/>
+    <text class="t" x="451" y="645" text-anchor="middle">控制</text>
+    <text class="s" x="451" y="665" text-anchor="middle">鼠标 · 键盘 · 热键</text>
+
+    <rect class="chip" x="558" y="614" width="186" height="76" rx="8"/>
+    <text class="t" x="651" y="645" text-anchor="middle">工具层</text>
+    <text class="s" x="651" y="665" text-anchor="middle">UIA · OCR · 截屏</text>
+
+    <rect class="chip" x="758" y="614" width="186" height="76" rx="8"/>
+    <text class="t" x="851" y="645" text-anchor="middle">媒体与文件</text>
+    <text class="s" x="851" y="665" text-anchor="middle">屏幕 · 摄像头 · 麦克风 · 互传</text>
+
+    <rect class="chip" x="958" y="614" width="186" height="76" rx="8"/>
+    <text class="t" x="1051" y="645" text-anchor="middle">凭据存储</text>
+    <text class="s" x="1051" y="665" text-anchor="middle">系统级加密后落盘</text>
+  </g>
+
+  <!-- ================= 外部 ================= -->
+  <rect class="bandc" x="40" y="732" width="1120" height="92" rx="12"/>
+  <text class="band-l" x="56" y="758" font-size="13">外部服务（总闸默认关闭；开启后仅发送文本，截图与音频不出本机）</text>
+
+  <g>
+    <rect class="chip" x="56" y="774" width="352" height="32" rx="7"/>
+    <text class="s" x="232" y="795" text-anchor="middle" font-size="12">用户自备 API Key（BYOK）· 任意 OpenAI 兼容端点</text>
+
+    <rect class="chip" x="424" y="774" width="352" height="32" rx="7"/>
+    <text class="s" x="600" y="795" text-anchor="middle" font-size="12">MCP 服务端 · OAuth 授权 · 连接器目录</text>
+
+    <rect class="chip" x="792" y="774" width="352" height="32" rx="7"/>
+    <text class="s" x="968" y="795" text-anchor="middle" font-size="12">天气（open-meteo）· 新闻与语录（可关）</text>
+  </g>
+</svg>

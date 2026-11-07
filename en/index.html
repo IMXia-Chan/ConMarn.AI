@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>ConMarn · A local-first AI character runtime for Android</title>
+<meta name="description" content="ConMarn is an AI character runtime that runs entirely on the user's own Android device. Models, speech and memory stay on the device and work offline. Beyond conversation it operates the phone and a paired computer, and advances several tasks at once. Open source, free, no account required.">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="ConMarn · A local-first AI character runtime for Android">
+<meta property="og:description" content="ConMarn is an AI character runtime that runs entirely on the user's own Android device. Models, speech and memory stay on the device and work offline. Beyond conversation it operates the phone and a paired computer, and advances several tasks at once. Open source, free, no account required.">
+<meta property="og:image" content="../assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ConMarn · A local-first AI character runtime for Android">
+<meta name="twitter:description" content="ConMarn is an AI character runtime that runs entirely on the user's own Android device. Models, speech and memory stay on the device and work offline. Beyond conversation it operates the phone and a paired computer, and advances several tasks at once. Open source, free, no account required.">
+<meta name="twitter:image" content="../assets/og.png">
+
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="alternate" hreflang="zh-CN" href="../">
+<link rel="alternate" hreflang="en" href="../en/">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="grid-bg" aria-hidden="true"></div>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="../"><b>ConMarn</b><span class="ver">3.1</span></a>
+    <div class="nav-links"><a href="#difference">Differences</a><a href="#flow">Flow</a><a href="#capabilities">Capabilities</a><a href="#mechanisms">Design</a><a href="#privacy">Privacy</a><a href="#spec">Specs</a></div>
+    <a class="lang" href="../" hreflang="en" title="切换到中文">中文</a>
+    <a class="nav-dl" href="../ConMarn-3.1.apk" download>Download</a>
+  </div>
+</nav>
+
+<main id="main">
+
+<header class="hero">
+  <div class="wrap hero-inner">
+    <div class="rv">
+      <p class="eyebrow">ON-DEVICE INFERENCE · LOCAL-FIRST · MULTI-AGENT</p>
+      <h1>ConMarn</h1>
+      <p class="sub">A local-first multi-agent system for on-device inference and cross-device execution.</p>
+      <p class="lead">An AI character runtime that runs entirely on the user's own Android device. Models, speech and memory never leave the phone, and every outbound request is governed by a single master switch that is off by default. Beyond conversation it operates the phone and a paired computer, and advances several tasks at once.</p>
+      <div class="cta">
+        <a class="btn btn-p" href="../ConMarn-3.1.apk" download><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 20h16"/></svg>Download APK</a>
+        <a class="btn btn-g" href="https://github.com/IMXia-Chan/ConMarn.AI" target="_blank" rel="noopener">View source</a>
+      </div>
+      <p class="meta"><span>73.0 MB</span><span>arm64-v8a</span><span>Android 11 – 17</span><span>Apache-2.0</span></p>
+    </div>
+    <div class="hero-shot rv">
+      <div class="device">
+        <div class="screen" style="background-image:url(../shots/01-room.jpg)" role="img" aria-label="ConMarn character and room scene"></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="figs">
+  <div class="wrap"><div class="fig-grid rv"><div class="fig-item"><div class="fig-v">434<span class="u">ms</span></div><div class="fig-k">Snapshot restore</div><p class="fig-p">The constant prefix takes about 11 minutes to compute on first run; once persisted, it restores in 434 ms.</p></div><div class="fig-item"><div class="fig-v">3<span class="u">tasks</span></div><div class="fig-k">Run in parallel</div><p class="fig-p">The upper bound on tasks the multi-agent workbench advances at once — each can take follow-ups, stop, or archive.</p></div><div class="fig-item"><div class="fig-v">1,396<span class="u">tests</span></div><div class="fig-k">Unit tests</div><p class="fig-p">All passing, zero failures. Figures are read from the build output, not estimated.</p></div></div></div>
+</div>
+
+<section class="shots" id="shots">
+  <div class="wrap">
+    <div class="rail-bar rv">
+      <span class="rail-hint">SCREENS · 01–04</span>
+      <div class="rail-nav">
+        <button class="rn" type="button" data-dir="-1" aria-label="Previous" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <button class="rn" type="button" data-dir="1" aria-label="Next"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+      </div>
+    </div>
+    <div class="rail rv"><div class="shot"><div class="device"><div class="screen" style="background-image:url(../shots/01-room.jpg)"></div></div><div class="scap"><div class="n">SCREEN 01</div><h3>Character and room</h3><p>A three-dimensional character in an interactive room. Window light follows real weather and time of day; objects can be tapped to start an action.</p></div></div><div class="shot"><div class="device"><div class="screen" style="background-image:url(../shots/02-workbench.jpg)"></div></div><div class="scap"><div class="n">SCREEN 02</div><h3>Multi-agent workbench</h3><p>Three tasks advance in parallel, each open to follow-ups, stops and archiving. Events are recorded per task and the process remains reviewable.</p></div></div><div class="shot"><div class="device"><div class="screen" style="background-image:url(../shots/03-drone.jpg)"></div></div><div class="scap"><div class="n">SCREEN 03 · concept</div><h3>Drone dispatch</h3><p>External devices join through API connectors: route, telemetry and task share one surface, with pause and return-to-home.</p></div></div><div class="shot"><div class="device"><div class="screen" style="background-image:url(../shots/04-arm.jpg)"></div></div><div class="scap"><div class="n">SCREEN 04 · concept</div><h3>Robotic arm</h3><p>Pick-and-place runs step by step, with joint angles and end-effector coordinates read back live. Each step can be stopped independently.</p></div></div></div>
+  </div>
+</section>
+
+<section id="difference">
+  <div class="wrap">
+    <div class="sec-head rv"><div class="sec-idx"><span class="n">01</span><span class="k">Difference</span></div><div><h2>How it differs from a cloud assistant</h2><p class="lead">The difference is not that one capability is stronger. It is that four dimensions change at once: where data lives, what may be executed, how many things run at a time, and who pays.</p></div></div>
+    <div class="rows rv">
+      <div class="row head"><div>Dimension</div><div>Cloud assistant</div><div>ConMarn</div></div>
+      <div class="row"><div class="k">Data location</div><div class="a">Conversations are uploaded to the operator's servers</div><div class="b">Models run on the device; <b>usable offline</b></div></div><div class="row"><div class="k">Execution scope</div><div class="a">Returns text only</div><div class="b">Operates the phone, its apps, and peripherals or services reached over the LAN or via API</div></div><div class="row"><div class="k">Concurrency</div><div class="a">Single-threaded, one turn at a time</div><div class="b">Multiple tasks in parallel, each open to follow-ups, stops and archiving</div></div><div class="row"><div class="k">Cost</div><div class="a">Borne by the operator, billed by usage</div><div class="b"><b>No server-side cost</b>; cloud access uses the user's own key</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="flow">
+  <div class="wrap">
+    <div class="sec-head rv"><div class="sec-idx"><span class="n">02</span><span class="k">Flow</span></div><div><h2>The full path of one request</h2><p class="lead">From capture to receipt there are six stages, each with a defined fallback when it fails.</p></div></div>
+    <div class="flow rv"><div class="fstep"><span class="i">STEP 01</span><div class="bar"></div><h3>Capture</h3><p>Local wake word and voice activity detection, fully offline. The microphone closes while ConMarn is speaking.</p></div><div class="fstep"><span class="i">STEP 02</span><div class="bar"></div><h3>Interpret</h3><p>The on-device model parses intent and decides whether to answer, ask back, or act.</p></div><div class="fstep"><span class="i">STEP 03</span><div class="bar"></div><h3>Orchestrate</h3><p>The task is decomposed into steps and distributed across roles in the workbench, up to three at once.</p></div><div class="fstep"><span class="i">STEP 04</span><div class="bar"></div><h3>Execute</h3><p>Actions run on the device, inside the sandbox, or over the local network on the paired computer.</p></div><div class="fstep"><span class="i">STEP 05</span><div class="bar"></div><h3>Verify</h3><p>Input actions are read back and compared; visual actions are judged by pixel change. Any mismatch is reported as an error.</p></div><div class="fstep"><span class="i">STEP 06</span><div class="bar"></div><h3>Respond</h3><p>The result is stated in speech and expression, together with the actions that may follow.</p></div></div>
+  </div>
+</section>
+
+<section id="architecture">
+  <div class="wrap">
+    <div class="sec-head rv"><div class="sec-idx"><span class="n">03</span><span class="k">Architecture</span></div><div><h2>Four layers, one division of labour</h2><p class="lead">The phone carries all inference; the computer carries execution only. <b>This is a diagram of authority, not of deployment.</b></p></div></div>
+    <div class="arch-fig rv"><img src="../assets/architecture.svg" alt="ConMarn program architecture" loading="lazy" width="1200" height="850"></div>
+    <div class="figcap rv" data-hint="·"><span>FIG. 01 — PROGRAM ARCHITECTURE · diagram labels in Chinese</span><span>v3.1 · 2026-11-07</span></div>
+    <div class="rows arch-rows rv">
+      <div class="row head"><div>Layer</div><div>Question it answers</div><div>Consequence if it fails</div></div>
+      <div class="row"><div class="k">Presentation</div><div class="a">What state is it in right now</div><div class="b">No interface; background capability remains</div></div><div class="row"><div class="k">Orchestration</div><div class="a">Which step has this task reached</div><div class="b">Conversation works; multi-step tasks do not</div></div><div class="row"><div class="k">Execution</div><div class="a">Who performs this action</div><div class="b">It can speak but not act</div></div><div class="row"><div class="k">Model</div><div class="a">What is the reasoning based on</div><div class="b">No generation; interface and data remain</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="capabilities">
+  <div class="wrap">
+    <div class="sec-head rv"><div class="sec-idx"><span class="n">04</span><span class="k">Capabilities</span></div><div><h2>Eight capabilities</h2><p class="lead">Character, execution and orchestration share one on-device inference substrate. Each can be switched off independently.</p></div></div>
+    <div class="caps rv"><div class="cap"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20.5c0-3.7 3.4-6.4 7.5-6.4s7.5 2.7 7.5 6.4"/></svg><div><h3>Character and scene</h3><p>A three-dimensional character in an interactive room. Window light follows real weather and the day-night cycle; greetings and the day's agenda are delivered by time of day.</p></div></div><div class="cap"><svg viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg><div><h3>Speech</h3><p>Wake word, segmentation, recognition and synthesis all run locally, fully offline. Capture closes during playback, so it does not trigger itself.</p></div></div><div class="cap"><svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="12.5" rx="1.5"/><path d="M8 21h8M12 17.5V21"/></svg><div><h3>Computer-side tools</h3><p>Fourteen named tools with a three-tier fallback — control tree, then text recognition, then visual localization — rising from milliseconds to seconds.</p></div></div><div class="cap"><svg viewBox="0 0 24 24"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 5.5h3M12 18.5h.01"/></svg><div><h3>Device and sandbox</h3><p>Operates native apps and the calendar. A built-in sandbox provides a userspace Linux environment that requires no root.</p></div></div><div class="cap"><svg viewBox="0 0 24 24"><rect x="3" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1"/></svg><div><h3>Multi-agent workbench</h3><p>Three tasks in parallel, each open to follow-ups, stops and archiving. Events are recorded per task and the process remains reviewable.</p></div></div><div class="cap"><svg viewBox="0 0 24 24"><path d="M12 2.5l2.7 6.2 6.7 1-4.9 4.6 1.2 6.7-5.7-3.1-5.7 3.1 1.2-6.7L2.6 9.7l6.7-1z"/></svg><div><h3>Skills and experience</h3><p>Completed procedures settle into replayable skills; observed experience is recalled in later tasks. All of it stays on the device.</p></div></div><div class="cap"><svg viewBox="0 0 24 24"><path d="M9.5 13.5a3.5 3.5 0 0 0 5 0l3-3a3.54 3.54 0 0 0-5-5l-1 1"/><path d="M14.5 10.5a3.5 3.5 0 0 0-5 0l-3 3a3.54 3.54 0 0 0 5 5l1-1"/></svg><div><h3>Pairing and transfer</h3><p>Peer-to-peer over the local network, with rotating pairing codes and one-time passphrases. Files transfer both ways with integrity checks.</p></div></div><div class="cap"><svg viewBox="0 0 24 24"><path d="M17.5 18.5H7a4.5 4.5 0 0 1-.7-8.95A6 6 0 0 1 17.6 9.6a4.5 4.5 0 0 1-.1 8.9z"/><path d="M12 12v5m0 0l-2-2m2 2l2-2"/></svg><div><h3>Cloud and connectors</h3><p>The user supplies the key; mainstream protocols are supported. MCP, OAuth and custom endpoints are available, all governed by the master switch.</p></div></div></div>
+  </div>
+</section>
+
+<section id="mechanisms">
+  <div class="wrap">
+    <div class="sec-head rv"><div class="sec-idx"><span class="n">05</span><span class="k">Design</span></div><div><h2>Four design decisions</h2><p class="lead">What these four share: each one narrows the gap between what appears possible and what is actually done.</p></div></div>
+    <div class="mech rv"><div class="mitem"><div class="mnum"><span class="mv">4,889</span><span class="mu">tokens</span><div class="m2"><span class="mv">685,325 → 434</span><span class="mu">ms</span></div></div><div><h3>Prefix snapshot</h3><p>The system prompt and the tool table form a constant prefix of roughly 4,889 tokens. Computing it on a phone takes 685,325 ms the first time; once written to disk it restores in 434 ms. The cost is a byte-exact coupling to the model and the prompt — any change forces a recompute.</p></div></div><div class="mitem"><div class="mnum"><span class="mv">14</span><span class="mu">named tools</span><div class="m2"><span class="mv">1</span><span class="mu">generic entry</span></div></div><div><h3>A tool table that does not grow</h3><p>The tool table the model can see is that prefix. So only the resident computer-side hand exposes named tools; every other capability shares a single generic entry point, with its inventory placed in the tool result — which sits after the cache and so does not break the snapshot. One tool or twenty cost the same prefix.</p></div></div><div class="mitem"><div class="mnum"><span class="mv">2</span><span class="mu">kinds of check</span><div class="m2"><span class="mv">0</span><span class="mu">silent failures</span></div></div><div><h3>Honest receipts</h3><p>Input actions are read back and compared after completion; a mismatch is an error. Visual actions are judged by whether pixels changed. A successful call is never reported as a successful outcome, and every receipt states what may be done next.</p></div></div><div class="mitem"><div class="mnum"><span class="mv">1</span><span class="mu">outbound switch</span><div class="m2"><span class="mv">off</span><span class="mu">by default</span></div></div><div><h3>One master switch</h3><p>The cloud fallback channel is the only outbound switch. Turning it off stops weather, page reading, cloud execution and connectors from sending anything. There is no per-item toggle, so no item can be missed. The switch lives in Settings and is off by default.</p></div></div></div>
+  </div>
+</section>
+
+<section id="privacy">
+  <div class="wrap">
+    <div class="sec-head rv"><div class="sec-idx"><span class="n">06</span><span class="k">Privacy</span></div><div><h2>What can and cannot be promised</h2><p class="lead">Both columns are stated side by side so that a reader can judge the third one — the items left unmentioned that are still worth asking about.</p></div></div>
+    <div class="priv rv"><div class="pcol yes"><div class="h"><svg viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg><b>Can promise</b></div><div class="pr"><div class="k">Screenshots never leave the device</div><div class="v">Visual localization runs on the on-device model; no upload path exists</div></div><div class="pr"><div class="k">Audio never leaves the device</div><div class="v">Audio is processed in memory and discarded after decoding; it is never written to disk</div></div><div class="pr"><div class="k">The cloud sees codenames only</div><div class="v">Real entities are replaced with stable codenames before sending; the mapping stays on the device</div></div><div class="pr"><div class="k">Master switch off means no traffic</div><div class="v">A single switch covers every outbound path; there is no per-item toggle</div></div></div><div class="pcol no"><div class="h"><svg viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg><b>Cannot promise</b></div><div class="pr"><div class="k">“Absolutely secure”</div><div class="v">Codenames are not encryption; they only keep plaintext from the cloud</div></div><div class="pr"><div class="k">“Only the owner's voice”</div><div class="v">A voice can be recorded and cannot serve as an identity check</div></div><div class="pr"><div class="k">“Deleting removes everything”</div><div class="v">Unformatted strings that were once submitted cannot be reliably reclaimed</div></div><div class="pr"><div class="k">“Equally fast on any device”</div><div class="v">On-device inference depends on the device's compute and thermals</div></div></div></div>
+  </div>
+</section>
+
+<section id="spec">
+  <div class="wrap">
+    <div class="sec-head rv"><div class="sec-idx"><span class="n">07</span><span class="k">Specification</span></div><div><h2>Specifications and scale</h2><p class="lead">Every figure below is read from the source tree, the build output or the installed package on device. None are estimates.</p></div></div>
+    <div class="specs rv"><div class="spec"><div class="k">OS support</div><div class="v">Android 11 – 17</div></div><div class="spec"><div class="k">Architecture</div><div class="v">arm64-v8a</div></div><div class="spec"><div class="k">Package</div><div class="v">73,020,602 bytes (about 73.0 MB)</div></div><div class="spec"><div class="k">Idle resident memory</div><div class="v">About 43 MB</div></div><div class="spec"><div class="k">Cold wake from swap</div><div class="v">2.9 seconds</div></div><div class="spec"><div class="k">Computer side</div><div class="v">Windows · Python service, no third-party framework dependencies</div></div><div class="spec"><div class="k">Licence</div><div class="v">Apache-2.0; model files are not distributed with the repository</div></div><div class="spec"><div class="k">Source size</div><div class="v">70,410 lines of Kotlin (174 files) · 13,235 lines of computer-side service (26 files)</div></div><div class="spec"><div class="k">Unit tests</div><div class="v">1,396 tests, 0 failures</div></div><div class="spec"><div class="k">Computer-side tools</div><div class="v">14 named tools</div></div></div>
+  </div>
+</section>
+
+<section id="limits">
+  <div class="wrap">
+    <div class="sec-head rv"><div class="sec-idx"><span class="n">08</span><span class="k">Boundaries</span></div><div><h2>What this does not do</h2><p class="lead">Half of a product's credibility comes from how much it claims; the other half from how much it admits it does not.</p></div></div>
+    <div class="limits rv"><div class="lim"><div class="k">No iOS build</div><div class="v">On-device model loading, a resident foreground service and background audio capture are not all attainable on that platform.</div></div><div class="lim"><div class="k">No multi-user or cloud sync</div><div class="v">Both contradict the premise that data never leaves the device.</div></div><div class="lim"><div class="k">No character marketplace</div><div class="v">Characters are defined by the user; there is no official distribution.</div></div><div class="lim"><div class="k">Language quality is not the selling point</div><div class="v">A phone-class model does not pursue parity with cloud-scale generation.</div></div></div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <div class="sec-head rv"><div class="sec-idx"><span class="n">09</span><span class="k">FAQ</span></div><div><h2>Frequently asked</h2><p class="lead">Six questions worth reading before installing.</p></div></div>
+    <div class="faq rv"><details><summary>Does it need a network connection?</summary><div class="a">No. Models, speech and memory all run on the device; conversation and execution work in airplane mode. External requests are made only when the <b>cloud fallback channel</b> is deliberately enabled. That switch lives in Settings and is off by default.</div></details><details><summary>Which devices can install it?</summary><div class="a">It requires <b>Android 11 or later</b> on <b>arm64-v8a</b>, which covers mainstream Android hardware of recent years. The package is 73.0 MB and does not include model files. On-device inference has real memory and thermal requirements; on low-end devices responses are noticeably slower.</div></details><details><summary>Is there a cost?</summary><div class="a">The <b>personal edition is free</b>. The code is open source under Apache-2.0, and local operation incurs no server-side cost. If the cloud channel is enabled, it uses the user's own API key and the provider bills by usage.</div></details><details><summary>What happens without the computer-side component?</summary><div class="a">The computer only performs execution. Without it, computer-dependent features are unavailable; the character, speech, workbench and sandbox on the phone are unaffected.</div></details><details><summary>Is any data uploaded?</summary><div class="a">Screenshots, audio and memory stay on the device and have no upload path. Text sent to the cloud is first codenamed, and the mapping stays on the device. Codenaming is not encryption; its only effect is that the cloud cannot read the original text.</div></details><details><summary>Why is there no iOS version?</summary><div class="a">The system depends on on-device model loading, a resident foreground service and background audio capture. All three are unattainable on iOS, so no build exists for it. The Windows component is an execution endpoint only and carries no inference.</div></details></div>
+  </div>
+</section>
+
+<section id="opensource">
+  <div class="wrap">
+    <div class="sec-head rv"><div class="sec-idx"><span class="n">10</span><span class="k">Open source</span></div><div><h2>Open source and commercial model</h2><p class="lead">The full source is published under Apache-2.0 and <b>personal use is free</b>. Commercial revenue comes from licensing, deployment and maintenance for institutions — not from limiting individual users.</p></div></div>
+    <div class="rows rv">
+      <div class="row head"><div></div><div>Personal</div><div>Institutional</div></div>
+      <div class="row"><div class="k">Licence</div><div class="a">Apache-2.0, build it yourself</div><div class="b">Commercial licence, private deployment supported</div></div><div class="row"><div class="k">Cost</div><div class="a">Free</div><div class="b">Annual fee by seat count, or quoted per project</div></div><div class="row"><div class="k">Scope</div><div class="a">All features, no account, no subscription</div><div class="b">Deployment · custom skills · integration · fleet configuration</div></div><div class="row"><div class="k">Support</div><div class="a">Repository issues</div><div class="b">Dedicated support · annual maintenance and releases</div></div>
+    </div>
+    <p class="os-note rv">Inference happens on the device, so <b>the personal edition carries no server-side cost</b> and growth does not increase spend. Institutions buying locally-run software need to audit the code and confirm that data stays inside their network; open source is the precondition for that market, not a concession.</p>
+  </div>
+</section>
+
+<section class="dl">
+  <div class="wrap">
+    <h2>Keep the model in your own hands</h2>
+    <p>Free · open source · no account · no subscription</p>
+    <div class="cta">
+      <a class="btn btn-p" href="../ConMarn-3.1.apk" download><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 20h16"/></svg>Download APK</a>
+      <a class="btn btn-g" href="https://github.com/IMXia-Chan/ConMarn.AI" target="_blank" rel="noopener">View source</a>
+    </div>
+    <p class="meta"><span>73.0 MB</span><span>arm64-v8a</span><span>Android 11 – 17</span></p>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="fgrid">
+      <div>
+        <b>ConMarn</b>
+        <p>A local-first multi-agent system for on-device inference and cross-device execution.<br>Source released under Apache-2.0. Model files are not distributed with the repository and must be obtained separately.</p>
+      </div>
+      <div class="fright">
+        <a class="flink" href="https://github.com/IMXia-Chan/ConMarn.AI" target="_blank" rel="noopener">github.com/IMXia-Chan/ConMarn.AI →</a>
+        <a class="flink lang2" href="../">中文</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="../assets/site.js" defer></script>
+</body>
+</html>
