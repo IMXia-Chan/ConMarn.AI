@@ -31,7 +31,7 @@
 <nav class="nav">
   <div class="wrap">
     <a class="brand" href="../"><b>ConMarn</b><span class="ver">3.1</span></a>
-    <div class="nav-links"><a href="#difference">Differences</a><a href="#flow">Flow</a><a href="#capabilities">Capabilities</a><a href="#mechanisms">Design</a><a href="#privacy">Privacy</a><a href="#spec">Specs</a></div>
+    <div class="nav-links"><a href="#desktop">Desktop</a><a href="#difference">Differences</a><a href="#flow">Flow</a><a href="#capabilities">Capabilities</a><a href="#mechanisms">Design</a><a href="#privacy">Privacy</a><a href="#spec">Specs</a></div>
     <a class="lang" href="../index.html" hreflang="zh-CN" title="切换到中文">中文</a>
     <a class="nav-dl" href="../ConMarn-3.1.apk" download>Download</a>
   </div>
@@ -74,6 +74,34 @@
       </div>
     </div>
     <div class="rail rv"><div class="shot"><div class="device"><div class="screen" style="background-image:url(../shots/01-room.jpg)"></div></div><div class="scap"><div class="n">SCREEN 01</div><h3>Character and room</h3><p>A three-dimensional character in an interactive room. Window light follows real weather and time of day; objects can be tapped to start an action.</p></div></div><div class="shot"><div class="device"><div class="screen" style="background-image:url(../shots/02-workbench.jpg)"></div></div><div class="scap"><div class="n">SCREEN 02</div><h3>Multi-agent workbench</h3><p>Three tasks advance in parallel, each open to follow-ups, stops and archiving. Events are recorded per task and the process remains reviewable.</p></div></div><div class="shot"><div class="device"><div class="screen" style="background-image:url(../shots/03-drone.jpg)"></div></div><div class="scap"><div class="n">SCREEN 03 · concept</div><h3>Drone dispatch</h3><p>External devices join through API connectors: route, telemetry and task share one surface, with pause and return-to-home.</p></div></div><div class="shot"><div class="device"><div class="screen" style="background-image:url(../shots/04-arm.jpg)"></div></div><div class="scap"><div class="n">SCREEN 04 · concept</div><h3>Robotic arm</h3><p>Pick-and-place runs step by step, with joint angles and end-effector coordinates read back live. Each step can be stopped independently.</p></div></div></div>
+  </div>
+</section>
+
+<section class="deskapp" id="desktop">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="sec-idx"><span class="n">DESKTOP</span><span class="k">Companion</span></div>
+      <div>
+        <h2>The phone reasons; the desktop acts</h2>
+        <p class="lead">The desktop program gathers the machine's capabilities into one window: camera and microphone switches, file exchange with the phone, pairing status, runtime log and start-at-login. The program itself takes no part in pairing or encryption — a background service on the same machine does that. Closing the window does not affect the phone connection. The desktop program is an optional companion to the phone app.</p>
+      </div>
+    </div>
+
+    <div class="desk-grid rv">
+      <figure class="dshot wide">
+        <div class="device desk"><div class="screen" style="background-image:url(../shots/05-desktop-overview.jpg);aspect-ratio:1120/548;background-position:top center" role="img" aria-label="Desktop overview"></div></div>
+        <figcaption class="dcap"><div class="n">SCREEN 05</div><h3>Overview</h3><p>Uptime, phone connection, pairing state, connection details, the current pairing code and recent events on a single page.</p></figcaption>
+      </figure>
+      <figure class="dshot">
+        <div class="device desk"><div class="screen" style="background-image:url(../shots/06-desktop-files.jpg)" role="img" aria-label="Desktop files"></div></div>
+        <figcaption class="dcap"><div class="n">SCREEN 06</div><h3>Files</h3><p>The local transfer directory and the phone's sit side by side. Upload, send and fetch happen in place; duplicate names advance rather than overwrite.</p></figcaption>
+      </figure>
+      <figure class="dshot">
+        <div class="device desk"><div class="screen" style="background-image:url(../shots/07-desktop-pair.jpg)" role="img" aria-label="Desktop pairing"></div></div>
+        <figcaption class="dcap"><div class="n">SCREEN 07</div><h3>Pairing</h3><p>The pairing QR appears only after the login PIN is entered. Both the QR and the pairing code are single-use; unpairing requires the phone to pair again.</p></figcaption>
+      </figure>
+    </div>
+    <p class="desk-note">Screenshots use sample data.</p>
   </div>
 </section>
 

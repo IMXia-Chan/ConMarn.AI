@@ -539,3 +539,15 @@ html.js .rv.on{opacity:1;transform:none}
   .pr{grid-template-columns:1fr;gap:4px}
   .pr .v{padding-bottom:2px}
 }
+
+/* ---------- desktop app ---------- */
+.device.desk{padding:6px;border-radius:12px}
+.device.desk .screen{aspect-ratio:1120 / 760;border-radius:7px}
+.desk-grid{display:grid;grid-template-columns:1fr 1fr;gap:34px 24px}
+.desk-grid .wide{grid-column:1 / -1}
+.dcap{margin:18px 0 0}
+.dcap .n{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--accent)}
+.dcap h3{font-size:15.5px;margin:9px 0 7px;font-weight:600;letter-spacing:-.012em}
+.dcap p{font-size:12.5px;color:var(--ink-3);line-height:1.8;margin:0}
+.desk-note{margin:30px 0 0;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--ink-3)}
+@media (max-width:760px){.desk-grid{grid-template-columns:1fr}}
