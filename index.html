@@ -8,14 +8,17 @@
 <meta name="description" content="ConMarn 是一个运行在用户自有 Android 设备上的 AI 角色运行时。模型、语音与记忆全部保留在本机，断网可用；除对话之外，还能操作手机与电脑，并同时推进多项任务。开源、免费、无账号。">
 
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://imxia-chan.github.io/ConMarn.AI/">
 <meta property="og:title" content="ConMarn · 运行在 Android 设备本地的 AI 角色运行时">
 <meta property="og:description" content="ConMarn 是一个运行在用户自有 Android 设备上的 AI 角色运行时。模型、语音与记忆全部保留在本机，断网可用；除对话之外，还能操作手机与电脑，并同时推进多项任务。开源、免费、无账号。">
-<meta property="og:image" content="./assets/og.png">
+<meta property="og:image" content="https://imxia-chan.github.io/ConMarn.AI/assets/og.png">
+<meta property="og:locale" content="zh_CN">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="ConMarn · 运行在 Android 设备本地的 AI 角色运行时">
 <meta name="twitter:description" content="ConMarn 是一个运行在用户自有 Android 设备上的 AI 角色运行时。模型、语音与记忆全部保留在本机，断网可用；除对话之外，还能操作手机与电脑，并同时推进多项任务。开源、免费、无账号。">
-<meta name="twitter:image" content="./assets/og.png">
+<meta name="twitter:image" content="https://imxia-chan.github.io/ConMarn.AI/assets/og.png">
 
+<link rel="canonical" href="https://imxia-chan.github.io/ConMarn.AI/">
 <link rel="icon" type="image/svg+xml" href="./favicon.svg">
 <link rel="alternate" hreflang="zh-CN" href="./">
 <link rel="alternate" hreflang="en" href="./en/">
@@ -79,7 +82,7 @@
     <div class="sec-head rv"><div class="sec-idx"><span class="n">01</span><span class="k">差异</span></div><div><h2>与云端助手的差异</h2><p class="lead">差异不在单项能力的强弱，而在四个维度同时成立：数据位置、执行范围、并发能力与成本归属。</p></div></div>
     <div class="rows rv">
       <div class="row head"><div>维度</div><div>云端通用助手</div><div>ConMarn</div></div>
-      <div class="row"><div class="k">数据位置</div><div class="a">对话内容需上传至服务方服务器</div><div class="b">模型在本机运行，<b>断网可用</b></div></div><div class="row"><div class="k">执行范围</div><div class="a">仅返回文本</div><div class="b">操作手机本体、本机应用，以及经局域网或 API 接入的外设与服务</div></div><div class="row"><div class="k">并发能力</div><div class="a">单轮对话，串行处理</div><div class="b">多任务并行，每项可追加轮次、可停止、可归档</div></div><div class="row"><div class="k">成本归属</div><div class="a">由服务方承担，按用量计费</div><div class="b"><b>无服务端支出</b>；需要云端时使用自备密钥</div></div>
+      <div class="row"><div class="k">数据位置</div><div class="a" data-l="云端通用助手">对话内容需上传至服务方服务器</div><div class="b" data-l="ConMarn">模型在本机运行，<b>断网可用</b></div></div><div class="row"><div class="k">执行范围</div><div class="a" data-l="云端通用助手">仅返回文本</div><div class="b" data-l="ConMarn">操作手机本体、本机应用，以及经局域网或 API 接入的外设与服务</div></div><div class="row"><div class="k">并发能力</div><div class="a" data-l="云端通用助手">单轮对话，串行处理</div><div class="b" data-l="ConMarn">多任务并行，每项可追加轮次、可停止、可归档</div></div><div class="row"><div class="k">成本归属</div><div class="a" data-l="云端通用助手">由服务方承担，按用量计费</div><div class="b" data-l="ConMarn"><b>无服务端支出</b>；需要云端时使用自备密钥</div></div>
     </div>
   </div>
 </section>
@@ -98,7 +101,7 @@
     <div class="figcap rv" data-hint="·"><span>FIG. 01 — 程序架构</span><span>V3.1 · 2026-11-07</span></div>
     <div class="rows arch-rows rv">
       <div class="row head"><div>层</div><div>回答的问题</div><div>该层失效的后果</div></div>
-      <div class="row"><div class="k">表现层</div><div class="a">当前处于什么状态</div><div class="b">无界面，后台能力仍在</div></div><div class="row"><div class="k">编排层</div><div class="a">这件事进行到第几步</div><div class="b">可对话，但无法完成多步任务</div></div><div class="row"><div class="k">执行层</div><div class="a">这件事由谁动手</div><div class="b">只能表达，不能执行</div></div><div class="row"><div class="k">模型层</div><div class="a">推理依据从何而来</div><div class="b">无生成能力，界面与数据仍在</div></div>
+      <div class="row"><div class="k">表现层</div><div class="a" data-l="回答的问题">当前处于什么状态</div><div class="b" data-l="该层失效的后果">无界面，后台能力仍在</div></div><div class="row"><div class="k">编排层</div><div class="a" data-l="回答的问题">这件事进行到第几步</div><div class="b" data-l="该层失效的后果">可对话，但无法完成多步任务</div></div><div class="row"><div class="k">执行层</div><div class="a" data-l="回答的问题">这件事由谁动手</div><div class="b" data-l="该层失效的后果">只能表达，不能执行</div></div><div class="row"><div class="k">模型层</div><div class="a" data-l="回答的问题">推理依据从何而来</div><div class="b" data-l="该层失效的后果">无生成能力，界面与数据仍在</div></div>
     </div>
   </div>
 </section>
@@ -119,8 +122,8 @@
 
 <section id="privacy">
   <div class="wrap">
-    <div class="sec-head rv"><div class="sec-idx"><span class="n">06</span><span class="k">隐私</span></div><div><h2>能承诺的，与不能承诺的</h2><p class="lead">两栏并列列出，便于读者自行判断哪些事项未被提及、但仍值得追问。</p></div></div>
-    <div class="priv rv"><div class="pcol yes"><div class="h"><svg viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg><b>能承诺</b></div><div class="pr"><div class="k">屏幕截图不出本机</div><div class="v">视觉定位在本机模型上运行，没有上传路径</div></div><div class="pr"><div class="k">音频不出本机</div><div class="v">音频在内存中处理，解码后即弃，不落盘</div></div><div class="pr"><div class="k">云端只见代号</div><div class="v">真实实体在发送前替换为稳定代号，对照表仅存本机</div></div><div class="pr"><div class="k">关闭总闸即无外发</div><div class="v">一个开关控制全部出口，不做逐项关闭</div></div></div><div class="pcol no"><div class="h"><svg viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg><b>不承诺</b></div><div class="pr"><div class="k">「绝对安全」</div><div class="v">代号替换不是加密，仅使云端无法读取原文</div></div><div class="pr"><div class="k">「只认本人声音」</div><div class="v">声音可被录制，不能作为身份判据</div></div><div class="pr"><div class="k">「删除即可彻底清除」</div><div class="v">曾输入的无格式字符串无法被可靠回收</div></div><div class="pr"><div class="k">「任何设备同样流畅」</div><div class="v">端侧推理速度取决于设备算力与散热</div></div></div></div>
+    <div class="sec-head rv"><div class="sec-idx"><span class="n">06</span><span class="k">隐私</span></div><div><h2>能承诺的，与不能承诺的</h2><p class="lead">两栏并列：左侧列出已经成立的事实，右侧列出不予承诺的部分。</p></div></div>
+    <div class="priv rv"><div class="ph a yes"><div class="h"><svg viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg><b>能承诺</b></div></div><div class="ph b no"><div class="h"><svg viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg><b>不承诺</b></div></div><div class="pr a"><div class="k">屏幕截图不出本机</div><div class="v">视觉定位在本机模型上运行，没有上传路径</div></div><div class="pr b"><div class="k">「绝对安全」</div><div class="v">代号替换不是加密，仅使云端无法读取原文</div></div><div class="pr a"><div class="k">音频不出本机</div><div class="v">音频在内存中处理，解码后即弃，不落盘</div></div><div class="pr b"><div class="k">「只认本人声音」</div><div class="v">声音可被录制，不能作为身份判据</div></div><div class="pr a"><div class="k">云端只见代号</div><div class="v">真实实体在发送前替换为稳定代号，对照表仅存本机</div></div><div class="pr b"><div class="k">「删除即可彻底清除」</div><div class="v">曾输入的无格式字符串无法被可靠回收</div></div><div class="pr a"><div class="k">关闭总闸即无外发</div><div class="v">一个开关控制全部出口，不做逐项关闭</div></div><div class="pr b"><div class="k">「任何设备同样流畅」</div><div class="v">端侧推理速度取决于设备算力与散热</div></div></div>
   </div>
 </section>
 
@@ -134,7 +137,7 @@
 <section id="limits">
   <div class="wrap">
     <div class="sec-head rv"><div class="sec-idx"><span class="n">08</span><span class="k">边界</span></div><div><h2>不做的事项</h2><p class="lead">一个产品的可信度，一半来自它声明能做多少，另一半来自它承认不做多少。</p></div></div>
-    <div class="limits rv"><div class="lim"><div class="k">不支持 iOS</div><div class="v">端侧模型加载、前台常驻服务、后台音频采集三项约束在该平台均不成立。</div></div><div class="lim"><div class="k">不做多用户与云同步</div><div class="v">与「数据不出本机」直接冲突。</div></div><div class="lim"><div class="k">不提供角色市场</div><div class="v">角色由使用者自行定义，不设官方角色分发。</div></div><div class="lim"><div class="k">不以语言质量作为卖点</div><div class="v">手机端模型不追求与云端大模型对齐的生成质量。</div></div></div>
+    <div class="limits rv"><div class="lim"><div class="k">不支持 iOS</div><div class="v">端侧模型加载、前台常驻服务、后台音频采集三项约束在该平台均不成立。</div></div><div class="lim"><div class="k">不做多用户与云同步</div><div class="v">与「默认不出本机」这一前提直接冲突。</div></div><div class="lim"><div class="k">不提供角色市场</div><div class="v">角色由使用者自行定义，不设官方角色分发。</div></div><div class="lim"><div class="k">不以语言质量作为卖点</div><div class="v">手机端模型不追求与云端大模型对齐的生成质量。</div></div></div>
   </div>
 </section>
 
@@ -150,9 +153,9 @@
     <div class="sec-head rv"><div class="sec-idx"><span class="n">10</span><span class="k">开源</span></div><div><h2>开源与商业化</h2><p class="lead">源代码以 Apache-2.0 全部公开，<b>个人使用不收费</b>。商业收入来自机构侧的授权、部署与维护，不来自对个人用户的功能限制。</p></div></div>
     <div class="rows rv">
       <div class="row head"><div></div><div>个人版</div><div>机构版</div></div>
-      <div class="row"><div class="k">授权</div><div class="a">Apache-2.0 开源，可自行构建</div><div class="b">商业授权，支持私有化部署</div></div><div class="row"><div class="k">费用</div><div class="a">免费</div><div class="b">按装机规模收取年费，或按项目报价</div></div><div class="row"><div class="k">范围</div><div class="a">全部功能，无账号、无订阅</div><div class="b">部署实施 · 定制技能 · 系统集成 · 批量配置</div></div><div class="row"><div class="k">支持</div><div class="a">仓库 Issue 支持</div><div class="b">专人支持 · 年度维护与版本更新</div></div>
+      <div class="row"><div class="k">授权</div><div class="a" data-l="个人版">Apache-2.0 开源，可自行构建</div><div class="b" data-l="机构版">商业授权，支持私有化部署</div></div><div class="row"><div class="k">费用</div><div class="a" data-l="个人版">免费</div><div class="b" data-l="机构版">按装机规模收取年费，或按项目报价</div></div><div class="row"><div class="k">范围</div><div class="a" data-l="个人版">全部功能，无账号、无订阅</div><div class="b" data-l="机构版">部署实施 · 定制技能 · 系统集成 · 批量配置</div></div><div class="row"><div class="k">支持</div><div class="a" data-l="个人版">仓库 Issue 支持</div><div class="b" data-l="机构版">专人支持 · 年度维护与版本更新</div></div>
     </div>
-    <p class="os-note rv">推理在本机完成，<b>个人版不产生任何服务端支出</b>，用户增长不扩大成本。机构采购本地运行的软件前需要审计代码、确认数据不出内网；开源是进入该市场的前提，而非让步。</p>
+    <p class="os-note rv">推理在本机完成，<b>个人版不产生任何服务端支出</b>，用户增长不扩大成本。机构采购本地运行的软件前需要审计代码、确认关闭总闸时数据不出内网；开源是进入该市场的前提，而非让步。</p>
   </div>
 </section>
 

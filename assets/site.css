@@ -314,18 +314,21 @@ section{border-bottom:1px solid var(--line);padding:104px 0;scroll-margin-top:va
 .mitem p{font-size:13.5px;color:var(--ink-3);line-height:1.9;max-width:720px}
 
 /* ---------- privacy ---------- */
+/* 两栏共用同一组网格行：左右两条 .pr 是同级兄弟，
+   同处一行 → 行高由两者中较高的决定，横线永远对齐（原先两列各自成网格，会逐行错开） */
 .priv{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line-2)}
-.pcol{padding:30px 48px 10px 0}
-.pcol+.pcol{border-left:1px solid var(--line);padding-left:48px;padding-right:0}
-.pcol .h{display:flex;align-items:center;gap:9px;margin-bottom:20px}
-.pcol .h svg{width:15px;height:15px;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.pcol.yes .h{color:var(--accent)}
-.pcol.no .h{color:var(--ink-3)}
-.pcol .h b{font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:inherit}
+.priv>*{padding-right:48px}
+.priv>.b{border-left:1px solid var(--line);padding-left:48px;padding-right:0}
+.ph{padding-top:30px;padding-bottom:10px}
+.ph .h{display:flex;align-items:center;gap:9px;margin-bottom:20px}
+.ph .h svg{width:15px;height:15px;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ph.yes .h{color:var(--accent)}
+.ph.no .h{color:var(--ink-3)}
+.ph .h b{font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:inherit}
 .pr{display:grid;grid-template-columns:.9fr 1.35fr;gap:20px;padding:15px 0;border-bottom:1px solid var(--line)}
-.pr:last-child{border-bottom:none}
+.priv>:nth-last-child(-n+2){border-bottom:none}
 .pr .k{font-size:13.5px;color:var(--ink);font-weight:500}
-.pcol.no .pr .k{color:var(--ink-2);font-weight:400}
+.pr.b .k{color:var(--ink-2);font-weight:400}
 .pr .v{font-size:12.5px;color:var(--ink-3);line-height:1.72}
 
 /* ---------- spec ---------- */
@@ -426,6 +429,31 @@ footer{padding:56px 0 76px;border-top:1px solid var(--line)}
 .legal .back{margin-top:60px;padding-top:26px;border-top:1px solid var(--line)}
 .legal .back a{font-family:var(--mono);font-size:12px;color:var(--ink-2);border-bottom:1px solid var(--line-2)}
 .legal .back a:hover{color:var(--accent);border-color:var(--accent)}
+.legal .toc{margin-top:34px;padding:22px 26px;border:1px solid var(--line);background:rgba(255,255,255,.014)}
+.legal .toc b{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);margin-bottom:13px}
+.legal .toc ol{list-style:none;margin:0;padding:0;columns:2;column-gap:36px}
+.legal .toc li{margin:0 0 7px;break-inside:avoid}
+.legal .toc a{display:flex;gap:10px;font-size:12.5px;color:var(--ink-2);border-bottom:none;line-height:1.6}
+.legal .toc a:hover{color:var(--accent)}
+.legal .tn{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);padding-top:1px}
+.legal h2 .hn{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);font-weight:400;margin-right:12px;letter-spacing:.04em}
+.legal table{width:100%;border-collapse:collapse;margin-top:18px;font-size:13px}
+.legal thead th{
+  text-align:left;padding:0 14px 10px;border-bottom:1px solid var(--line-2);
+  color:var(--ink);font-weight:600;font-size:11.5px;letter-spacing:.06em;
+}
+.legal tbody td{
+  text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);
+  color:var(--ink-2);line-height:1.68;vertical-align:top;
+}
+.legal tbody tr:last-child td{border-bottom:none}
+.legal thead th:first-child,.legal tbody td:first-child{padding-left:0}
+.legal thead th:last-child,.legal tbody td:last-child{padding-right:0}
+@media (max-width:720px){
+  .legal .toc ol{columns:1}
+  .legal table{font-size:12px}
+  .legal thead th,.legal tbody td{padding-left:9px;padding-right:9px}
+}
 @media (max-width:640px){
   .legal{padding:104px 0 64px}
   .flegal{flex-direction:column;gap:14px}
@@ -459,9 +487,13 @@ html.js .rv.on{opacity:1;transform:none}
   .cap{border-right:none;padding-right:0!important;padding-left:0!important}
   .cap:nth-last-child(-n+2){border-bottom:1px solid var(--line)}
   .cap:last-child{border-bottom:none}
+  /* 窄屏要回到「先a后b」的顺序，用 order 把两列重新分组 */
   .priv{grid-template-columns:1fr}
-  .pcol{padding-right:0}
-  .pcol+.pcol{border-left:none;border-top:1px solid var(--line-2);padding-left:0;margin-top:8px;padding-top:28px}
+  .priv>*{grid-column:1;padding-right:0}
+  .priv>.a{order:1}
+  .priv>.b{order:2}
+  .priv>.b{border-left:none;padding-left:0}
+  .priv>.ph.b{border-top:1px solid var(--line-2);margin-top:8px;padding-top:28px}
   .specs{grid-template-columns:1fr}
   .spec{border-right:none;padding-left:0!important}
   .spec:nth-last-child(-n+2){border-bottom:1px solid var(--line)}
@@ -482,13 +514,11 @@ html.js .rv.on{opacity:1;transform:none}
   .sec-head{margin-bottom:36px}
   .row{grid-template-columns:1fr;gap:6px;padding:18px 0}
   .row.head{display:none}
-  .row .a::before{
-    content:"CLOUD";display:block;font-family:var(--mono);font-size:9.5px;
+  /* 表头被隐藏后，用各行自己的 data-l 补出列名；
+     写死成云端/ConMarn 会把架构表、开源表整列标错 */
+  .row .a::before,.row .b::before{
+    content:attr(data-l);display:block;font-family:var(--mono);font-size:9.5px;
     letter-spacing:.16em;color:var(--ink-3);margin-bottom:3px;
-  }
-  .row .b::before{
-    content:"CONMARN";display:block;font-family:var(--mono);font-size:9.5px;
-    letter-spacing:.16em;color:var(--accent);margin-bottom:3px;
   }
   .flow{grid-template-columns:1fr}
   .fstep{border-right:none!important;padding:26px 0!important;border-bottom:1px solid var(--line)}
