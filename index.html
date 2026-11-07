@@ -50,7 +50,7 @@
         <a class="btn btn-p" href="./ConMarn-3.1.1.apk" download><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 20h16"/></svg>下载 APK</a>
         <a class="btn btn-g" href="https://github.com/IMXia-Chan/ConMarn.AI" target="_blank" rel="noopener">查看源码</a>
       </div>
-      <p class="meta"><span>73.0 MB</span><span>arm64-v8a</span><span>Android 11 – 17</span><span>Apache-2.0</span></p>
+      <p class="meta"><span>73.1 MB</span><span>arm64-v8a</span><span>Android 11 – 17</span><span>Apache-2.0</span></p>
       <p class="meta"><span>升级请直接覆盖安装，不要先卸载</span><span>卸载会连同本机的模型、房间与配对数据一并删除</span></p>
     </div>
     <div class="hero-shot rv">
@@ -159,7 +159,7 @@
 <section id="spec">
   <div class="wrap">
     <div class="sec-head rv"><div class="sec-idx"><span class="n">07</span><span class="k">规格</span></div><div><h2>规格与规模</h2><p class="lead">以下数值取自源码工作树、构建产物与真机安装包，未作估算。</p></div></div>
-    <div class="specs rv"><div class="spec"><div class="k">系统版本</div><div class="v">Android 11 – 17</div></div><div class="spec"><div class="k">处理器架构</div><div class="v">arm64-v8a</div></div><div class="spec"><div class="k">安装包</div><div class="v">73,020,602 字节（约 73.0 MB）</div></div><div class="spec"><div class="k">空闲常驻内存</div><div class="v">约 43 MB</div></div><div class="spec"><div class="k">冷启动唤醒</div><div class="v">2.9 秒（自 swap 恢复）</div></div><div class="spec"><div class="k">电脑端</div><div class="v">Windows · Python 服务，无第三方框架依赖</div></div><div class="spec"><div class="k">许可</div><div class="v">Apache-2.0；模型文件不随仓库分发</div></div><div class="spec"><div class="k">源码规模</div><div class="v">70,410 行 Kotlin（174 文件）· 13,235 行电脑端服务（26 文件）</div></div><div class="spec"><div class="k">单元测试</div><div class="v">1,396 项，0 失败</div></div><div class="spec"><div class="k">电脑端工具</div><div class="v">14 个具名工具</div></div></div>
+    <div class="specs rv"><div class="spec"><div class="k">系统版本</div><div class="v">Android 11 – 17</div></div><div class="spec"><div class="k">处理器架构</div><div class="v">arm64-v8a</div></div><div class="spec"><div class="k">安装包</div><div class="v">73,080,838 字节（约 73.1 MB）</div></div><div class="spec"><div class="k">空闲常驻内存</div><div class="v">约 43 MB</div></div><div class="spec"><div class="k">冷启动唤醒</div><div class="v">2.9 秒（自 swap 恢复）</div></div><div class="spec"><div class="k">电脑端</div><div class="v">Windows · Python 服务，无第三方框架依赖</div></div><div class="spec"><div class="k">许可</div><div class="v">Apache-2.0；模型文件不随仓库分发</div></div><div class="spec"><div class="k">源码规模</div><div class="v">70,410 行 Kotlin（174 文件）· 13,235 行电脑端服务（26 文件）</div></div><div class="spec"><div class="k">单元测试</div><div class="v">1,396 项，0 失败</div></div><div class="spec"><div class="k">电脑端工具</div><div class="v">14 个具名工具</div></div></div>
   </div>
 </section>
 
@@ -173,7 +173,7 @@
 <section id="faq">
   <div class="wrap">
     <div class="sec-head rv"><div class="sec-idx"><span class="n">09</span><span class="k">问答</span></div><div><h2>常见问题</h2><p class="lead">安装前值得先看的六条。</p></div></div>
-    <div class="faq rv"><details><summary>需要联网才能使用吗？</summary><div class="a">不需要。模型、语音与记忆均在本机运行，飞行模式下可以完整对话与执行。仅当主动开启<b>云端备用通道</b>时才会发出外部请求，该开关位于设置内，默认关闭。</div></details><details><summary>哪些设备可以安装？</summary><div class="a">需要 <b>Android 11 及以上</b>、<b>arm64-v8a</b> 架构，近年主流 Android 设备均属该架构。安装包 73.0 MB，不含模型文件。端侧推理对内存与散热有明确要求，低端设备的响应会明显变慢。</div></details><details><summary>是否需要付费？</summary><div class="a"><b>个人版完全免费</b>，代码以 Apache-2.0 许可开源，本地运行不产生任何服务端费用。如自行开启云端通道，使用自备 API 密钥，费用由服务方按用量结算。</div></details><details><summary>电脑端不安装会怎样？</summary><div class="a">电脑端仅承担执行。未安装时，涉及电脑的功能不可用，手机侧的角色、语音、工作台与沙盒不受影响。</div></details><details><summary>数据是否会被上传？</summary><div class="a">截图、音频与记忆均留在本机，没有上传路径。发往云端的文本会先做代号替换，对照表仅存本机。需要说明的是，代号替换不是加密，其作用仅是使云端无法读取原文。</div></details><details><summary>为什么没有 iOS 版本？</summary><div class="a">本系统依赖端侧模型加载、前台常驻服务与后台音频采集三项能力，该三项在 iOS 上均不成立，因此不提供该平台版本。Windows 电脑端仅作为执行端，不承担推理。</div></details></div>
+    <div class="faq rv"><details><summary>需要联网才能使用吗？</summary><div class="a">不需要。模型、语音与记忆均在本机运行，飞行模式下可以完整对话与执行。仅当主动开启<b>云端备用通道</b>时才会发出外部请求，该开关位于设置内，默认关闭。</div></details><details><summary>哪些设备可以安装？</summary><div class="a">需要 <b>Android 11 及以上</b>、<b>arm64-v8a</b> 架构，近年主流 Android 设备均属该架构。安装包 73.1 MB，不含模型文件。端侧推理对内存与散热有明确要求，低端设备的响应会明显变慢。</div></details><details><summary>是否需要付费？</summary><div class="a"><b>个人版完全免费</b>，代码以 Apache-2.0 许可开源，本地运行不产生任何服务端费用。如自行开启云端通道，使用自备 API 密钥，费用由服务方按用量结算。</div></details><details><summary>电脑端不安装会怎样？</summary><div class="a">电脑端仅承担执行。未安装时，涉及电脑的功能不可用，手机侧的角色、语音、工作台与沙盒不受影响。</div></details><details><summary>数据是否会被上传？</summary><div class="a">截图、音频与记忆均留在本机，没有上传路径。发往云端的文本会先做代号替换，对照表仅存本机。需要说明的是，代号替换不是加密，其作用仅是使云端无法读取原文。</div></details><details><summary>为什么没有 iOS 版本？</summary><div class="a">本系统依赖端侧模型加载、前台常驻服务与后台音频采集三项能力，该三项在 iOS 上均不成立，因此不提供该平台版本。Windows 电脑端仅作为执行端，不承担推理。</div></details></div>
   </div>
 </section>
 
@@ -196,7 +196,7 @@
       <a class="btn btn-p" href="./ConMarn-3.1.1.apk" download><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 20h16"/></svg>下载 APK</a>
       <a class="btn btn-g" href="https://github.com/IMXia-Chan/ConMarn.AI" target="_blank" rel="noopener">查看源码</a>
     </div>
-    <p class="meta"><span>73.0 MB</span><span>arm64-v8a</span><span>Android 11 – 17</span></p>
+    <p class="meta"><span>73.1 MB</span><span>arm64-v8a</span><span>Android 11 – 17</span></p>
   </div>
 </section>
 
