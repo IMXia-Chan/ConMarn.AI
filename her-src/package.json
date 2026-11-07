@@ -1,0 +1,16 @@
+{
+  "name": "her-web",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "ConMarn 的身体 —— 她的房间与 VRM 形象(WebGL 层),跑在 Android WebView 里",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "bash ../tools/build-her.sh"
+  },
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.5.5",
+    "esbuild": "^0.28.2",
+    "three": "^0.180.0"
+  }
+}
