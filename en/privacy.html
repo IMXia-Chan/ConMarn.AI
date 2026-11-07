@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Privacy Policy · ConMarn</title>
+<meta name="description" content="ConMarn privacy policy: what data the program touches, where it is stored, and under what conditions it leaves the device.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Privacy Policy · ConMarn">
+<meta property="og:description" content="ConMarn privacy policy: what data the program touches, where it is stored, and under what conditions it leaves the device.">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Back to home</a>
+<div class="grid-bg" aria-hidden="true"></div>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="../index.html"><b>ConMarn</b><span class="ver">3.1</span></a>
+    <div class="nav-links">
+      <a href="../index.html">Back to home</a>
+      <a class="lang" href="../privacy.html" hreflang="zh-CN">中文</a>
+    </div>
+  </div>
+</nav>
+
+<main id="main">
+<article class="legal">
+  <div class="wrap">
+    <p class="eyebrow">LEGAL</p>
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated 2026-11-08　·　Applies to ConMarn 3.1 and later</p>
+    <p class="lead">ConMarn is a local-first program that runs on the user's own device. This policy states, item by item, what data the program touches while running, where that data is stored, and under what conditions it leaves the device.</p>
+    <h2>Summary</h2><p>The project has no account system, collects no usage statistics, and bundles no analytics, crash reporting or advertising components. In its default state the program sends no data to any external service.</p><h2>What we do not collect</h2><ul><li>No registration or sign-in is required; no account or server-side profile exists.</li><li>No device identifiers, contacts, location, call logs or message contents are collected.</li><li>No telemetry, crash reporting or advertising components are embedded.</li></ul><h2>Data read on the device</h2><p>The following data is processed only in device memory or the app's private directory. It is not written to shared storage and is not sent with any request.</p><ul><li><b>Microphone audio</b>: captured only when the wake word is triggered or the user starts a voice turn; used for wake-word detection, voice activity detection and local speech recognition, then released.</li><li><b>Camera frames</b>: accessed only when the user starts a related feature; processed on the device.</li><li><b>Screen content</b>: accessed only when the user starts screen casting or visual grounding.</li><li><b>Clipboard, notifications and installed app list</b>: read only when the user gives a related instruction, and only to carry it out.</li><li><b>Accessibility service</b>: used to read the interface structure and perform taps on the device.</li></ul><h2>Where data is stored</h2><p>Model files, assets, the memory store, task records and runtime logs all live in the app's private directory. Uninstalling the app deletes them together with the app. The project provides no cloud backup.</p><h2>Data leaving the device</h2><p>Every outbound network request is governed by a single master switch, which is off by default. When it is on:</p><ul><li>Only text is sent. Screenshots, audio and video are never included in a request.</li><li>Requests go to an API endpoint and key configured by the user; how that endpoint handles data is the responsibility of its provider.</li><li>The built-in weather lookup uses open-meteo; news and quotation sources can be turned off in settings.</li></ul><p>Turning the master switch off stops all of the above.</p><h2>Permissions and their purpose</h2><ul><li><b>Microphone</b>: wake-word detection and voice input.</li><li><b>Camera</b>: media capture the user starts explicitly.</li><li><b>Overlay</b>: the persistent entry point and voice-state indicator.</li><li><b>Accessibility</b>: reading the interface and performing taps.</li><li><b>Notification access</b>: not enabled in the current version.</li><li><b>Network</b>: discovering devices on the local network, and requests the user starts after enabling the master switch.</li></ul><h2>The paired computer on the local network</h2><p>Traffic to a paired computer stays within the same subnet, is encrypted with a key agreed at pairing time, and is verified item by item.</p><h2>Minors</h2><p>The program is not intended for use by minors under 14 without supervision.</p><h2>Changes and contact</h2><p>Revisions to this policy are published with each release and the date above is updated. Questions and requests belong in <a href="https://github.com/IMXia-Chan/ConMarn.AI/issues" target="_blank" rel="noopener">GitHub Issues</a>.</p>
+    <p class="back"><a href="../index.html">Back to home</a></p>
+  </div>
+</article>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="flegal">
+      <span class="fcopy">© 2026 ConMarn · Apache-2.0</span>
+      <span class="ftm">ConMarn™ is a trademark of its owner. Other names and marks belong to their respective owners.</span>
+      <span class="flinks">
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="terms.html">Terms of Use</a>
+        <a href="https://github.com/IMXia-Chan/ConMarn.AI" target="_blank" rel="noopener">Source code</a>
+      </span>
+    </div>
+  </div>
+</footer>
+
+<script src="../assets/site.js" defer></script>
+</body>
+</html>

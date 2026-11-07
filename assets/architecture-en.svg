@@ -1,0 +1,196 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="850" viewBox="0 0 1200 850" font-family="'Microsoft YaHei','PingFang SC','Noto Sans CJK SC',sans-serif">
+  <defs>
+    <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6E79FF"/>
+    </marker>
+    <radialGradient id="glow" cx="0.16" cy="0.0" r="0.85">
+      <stop offset="0" stop-color="#6E79FF" stop-opacity="0.09"/>
+      <stop offset="0.55" stop-color="#6E79FF" stop-opacity="0.018"/>
+      <stop offset="1" stop-color="#6E79FF" stop-opacity="0"/>
+    </radialGradient>
+    <style>
+      .band   { fill:#0D0D12; stroke:#23232B; stroke-width:1; }
+      .bandp  { fill:#0C0C11; stroke:#23232B; stroke-width:1; }
+      .bandc  { fill:#0A0A0D; stroke:#2A2A33; stroke-width:1; stroke-dasharray:4 5; }
+      .chip   { fill:#14141B; stroke:#26262E; stroke-width:1; }
+      .railbg { fill:#101015; }
+      .t      { font-size:15px;   fill:#E8E8EC; font-weight:600; }
+      .s      { font-size:11.5px; fill:#7B7B89; }
+      .band-l { font-size:14px;   fill:#D2D2DA; font-weight:700; letter-spacing:.3px; }
+      .band-s { font-size:11.5px; fill:#68686F; }
+      .rail   { font-size:11px;   fill:#8E8E9C; font-weight:700; }
+      .rail-s { font-size:9.5px;  fill:#4C4C58; letter-spacing:1px; }
+      .note   { font-size:11.5px; fill:#6A6A78; }
+      .acc    { stroke:#6E79FF; stroke-width:2; stroke-linecap:round; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="850" fill="#08080A"/>
+  <rect width="1200" height="850" fill="url(#glow)"/>
+
+  <text x="56" y="45" font-size="20" font-weight="700" fill="#F0F0F3">A local-first, multi-agent system for on-device inference and cross-device execution</text>
+  <text x="56" y="69" font-size="12" fill="#6A6A78" letter-spacing=".2">ConMarn architecture · v3.1 · 2026-11-07 · inference, speech and memory stay on-device; the computer executes only; external services default off</text>
+
+  <!-- ================= 手机 ================= -->
+  <rect class="band" x="40" y="84" width="1120" height="416" rx="12"/>
+  <line class="acc" x1="56" y1="99" x2="84" y2="99"/>
+  <text class="band-l" x="56" y="118">Android phone (Android 11+ · arm64-v8a)</text>
+  <text class="band-s" x="1144" y="118" text-anchor="end">Inference and memory stay here · execution can reach computers on the LAN</text>
+
+  <!-- 表现层 -->
+  <rect class="railbg" x="56" y="134" width="92" height="76" rx="7"/>
+  <text class="rail" x="102" y="168" text-anchor="middle">Presentation</text>
+  <text class="rail-s" x="102" y="186" text-anchor="middle">VIEW</text>
+
+  <g>
+    <rect class="chip" x="158" y="134" width="186" height="76" rx="8"/>
+    <text class="t" x="251" y="165" text-anchor="middle">Character view</text>
+    <text class="s" x="251" y="185" text-anchor="middle">WebView · three.js · VRM</text>
+
+    <rect class="chip" x="358" y="134" width="186" height="76" rx="8"/>
+    <text class="t" x="451" y="165" text-anchor="middle" style="font-size:14px">Multi-agent workbench</text>
+    <text class="s" x="451" y="185" text-anchor="middle">Split view · parallel tasks</text>
+
+    <rect class="chip" x="558" y="134" width="186" height="76" rx="8"/>
+    <text class="t" x="651" y="165" text-anchor="middle">Touchpad · Cast</text>
+    <text class="s" x="651" y="185" text-anchor="middle">Gestures · screen view</text>
+
+    <rect class="chip" x="758" y="134" width="186" height="76" rx="8"/>
+    <text class="t" x="851" y="165" text-anchor="middle">Status board</text>
+    <text class="s" x="851" y="185" text-anchor="middle">Swipe down · local data</text>
+
+    <rect class="chip" x="958" y="134" width="186" height="76" rx="8"/>
+    <text class="t" x="1051" y="165" text-anchor="middle">Floating entry</text>
+    <text class="s" x="1051" y="185" text-anchor="middle">Resident bubble · voice</text>
+  </g>
+
+  <!-- 编排层 -->
+  <rect class="railbg" x="56" y="224" width="92" height="76" rx="7"/>
+  <text class="rail" x="102" y="258" text-anchor="middle">Orchestration</text>
+  <text class="rail-s" x="102" y="276" text-anchor="middle">ORCHESTRATE</text>
+
+  <g>
+    <rect class="chip" x="158" y="224" width="186" height="76" rx="8"/>
+    <text class="t" x="251" y="255" text-anchor="middle">AiAgent</text>
+    <text class="s" x="251" y="275" text-anchor="middle">Loop · tool dispatch</text>
+
+    <rect class="chip" x="358" y="224" width="186" height="76" rx="8"/>
+    <text class="t" x="451" y="255" text-anchor="middle">AgentBus</text>
+    <text class="s" x="451" y="275" text-anchor="middle">Event log · append-only</text>
+
+    <rect class="chip" x="558" y="224" width="186" height="76" rx="8"/>
+    <text class="t" x="651" y="255" text-anchor="middle">WorkJob</text>
+    <text class="s" x="651" y="275" text-anchor="middle">Task record · archive</text>
+
+    <rect class="chip" x="758" y="224" width="186" height="76" rx="8"/>
+    <text class="t" x="851" y="255" text-anchor="middle">Skills</text>
+    <text class="s" x="851" y="275" text-anchor="middle">SKILL.md · replayable</text>
+
+    <rect class="chip" x="958" y="224" width="186" height="76" rx="8"/>
+    <text class="t" x="1051" y="255" text-anchor="middle">Experience</text>
+    <text class="s" x="1051" y="275" text-anchor="middle">Observe → reuse → recall</text>
+  </g>
+
+  <!-- 执行层 -->
+  <rect class="railbg" x="56" y="314" width="92" height="76" rx="7"/>
+  <text class="rail" x="102" y="348" text-anchor="middle">Execution</text>
+  <text class="rail-s" x="102" y="366" text-anchor="middle">ACT</text>
+
+  <g>
+    <rect class="chip" x="158" y="314" width="186" height="76" rx="8"/>
+    <text class="t" x="251" y="345" text-anchor="middle">Device execution</text>
+    <text class="s" x="251" y="365" text-anchor="middle">Apps · alarms · clipboard</text>
+
+    <rect class="chip" x="358" y="314" width="186" height="76" rx="8"/>
+    <text class="t" x="451" y="345" text-anchor="middle">Computer execution</text>
+    <text class="s" x="451" y="365" text-anchor="middle">14 named tools</text>
+
+    <rect class="chip" x="558" y="314" width="186" height="76" rx="8"/>
+    <text class="t" x="651" y="345" text-anchor="middle">Sandbox</text>
+    <text class="s" x="651" y="365" text-anchor="middle">Alpine + busybox · local</text>
+
+    <rect class="chip" x="758" y="314" width="186" height="76" rx="8"/>
+    <text class="t" x="851" y="345" text-anchor="middle">Doc generation</text>
+    <text class="s" x="851" y="365" text-anchor="middle">md · tables · PPT</text>
+
+    <rect class="chip" x="958" y="314" width="186" height="76" rx="8"/>
+    <text class="t" x="1051" y="345" text-anchor="middle">Connectors</text>
+    <text class="s" x="1051" y="365" text-anchor="middle">API · MCP · OAuth</text>
+  </g>
+
+  <!-- 模型层 -->
+  <rect class="railbg" x="56" y="404" width="92" height="76" rx="7"/>
+  <text class="rail" x="102" y="438" text-anchor="middle">Model</text>
+  <text class="rail-s" x="102" y="456" text-anchor="middle">MODEL</text>
+
+  <g>
+    <rect class="chip" x="158" y="404" width="186" height="76" rx="8"/>
+    <text class="t" x="251" y="435" text-anchor="middle">Inference engine</text>
+    <text class="s" x="251" y="455" text-anchor="middle">llama-server · 127.0.0.1</text>
+
+    <rect class="chip" x="358" y="404" width="186" height="76" rx="8"/>
+    <text class="t" x="451" y="435" text-anchor="middle">Visual locator</text>
+    <text class="s" x="451" y="455" text-anchor="middle">On demand · last resort</text>
+
+    <rect class="chip" x="558" y="404" width="186" height="76" rx="8"/>
+    <text class="t" x="651" y="435" text-anchor="middle">Speech pipeline</text>
+    <text class="s" x="651" y="455" text-anchor="middle">KWS · VAD · ASR · TTS</text>
+
+    <rect class="chip" x="758" y="404" width="186" height="76" rx="8"/>
+    <text class="t" x="851" y="435" text-anchor="middle">Prefix snapshot</text>
+    <text class="s" x="851" y="455" text-anchor="middle">685,325 ms → 434 ms</text>
+
+    <rect class="chip" x="958" y="404" width="186" height="76" rx="8"/>
+    <text class="t" x="1051" y="435" text-anchor="middle">Local storage</text>
+    <text class="s" x="1051" y="455" text-anchor="middle">Models · memory · logs</text>
+  </g>
+
+  <!-- ================= 连接 ================= -->
+  <line x1="588" y1="506" x2="588" y2="558" stroke="#6E79FF" stroke-width="1.5" marker-end="url(#arw)"/>
+  <line x1="612" y1="558" x2="612" y2="506" stroke="#6E79FF" stroke-width="1.5" marker-end="url(#arw)"/>
+  <text class="note" x="640" y="524">Encrypted channel · per-call check (down = commands)</text>
+  <text class="note" x="640" y="546">Auto-discovery on the LAN · same subnet only (up = perception and events)</text>
+
+  <!-- ================= 电脑 ================= -->
+  <rect class="bandp" x="40" y="566" width="1120" height="150" rx="12"/>
+  <line class="acc" x1="56" y1="581" x2="84" y2="581"/>
+  <text class="band-l" x="56" y="600">Windows PC (Python service · no third-party framework)</text>
+  <text class="band-s" x="1144" y="600" text-anchor="end">Execution only: mouse and keyboard, bounded by permissions</text>
+
+  <g>
+    <rect class="chip" x="158" y="614" width="186" height="76" rx="8"/>
+    <text class="t" x="251" y="645" text-anchor="middle">Pairing &amp; auth</text>
+    <text class="s" x="251" y="665" text-anchor="middle">Device binding · session</text>
+
+    <rect class="chip" x="358" y="614" width="186" height="76" rx="8"/>
+    <text class="t" x="451" y="645" text-anchor="middle">Control</text>
+    <text class="s" x="451" y="665" text-anchor="middle">Mouse · keyboard · hotkeys</text>
+
+    <rect class="chip" x="558" y="614" width="186" height="76" rx="8"/>
+    <text class="t" x="651" y="645" text-anchor="middle">Tool layer</text>
+    <text class="s" x="651" y="665" text-anchor="middle">UIA · OCR · screenshot</text>
+
+    <rect class="chip" x="758" y="614" width="186" height="76" rx="8"/>
+    <text class="t" x="851" y="645" text-anchor="middle">Media &amp; files</text>
+    <text class="s" x="851" y="665" text-anchor="middle">Screen · camera · mic</text>
+
+    <rect class="chip" x="958" y="614" width="186" height="76" rx="8"/>
+    <text class="t" x="1051" y="645" text-anchor="middle">Credential store</text>
+    <text class="s" x="1051" y="665" text-anchor="middle">Encrypted at rest</text>
+  </g>
+
+  <!-- ================= 外部 ================= -->
+  <rect class="bandc" x="40" y="732" width="1120" height="92" rx="12"/>
+  <text class="band-l" x="56" y="758" font-size="13">External services (master switch off by default; text only — screenshots and audio never leave the device)</text>
+
+  <g>
+    <rect class="chip" x="56" y="774" width="352" height="32" rx="7"/>
+    <text class="s" x="232" y="795" text-anchor="middle" font-size="12">Own key (BYOK) · any OpenAI-compatible endpoint</text>
+
+    <rect class="chip" x="424" y="774" width="352" height="32" rx="7"/>
+    <text class="s" x="600" y="795" text-anchor="middle" font-size="12">MCP servers · OAuth · connector catalog</text>
+
+    <rect class="chip" x="792" y="774" width="352" height="32" rx="7"/>
+    <text class="s" x="968" y="795" text-anchor="middle" font-size="12">Weather (open-meteo) · news &amp; quotes (optional)</text>
+  </g>
+</svg>
