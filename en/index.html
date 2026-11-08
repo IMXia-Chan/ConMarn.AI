@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="dark light">
 <title>ConMarn · A local-first AI character runtime for Android</title>
 <meta name="description" content="ConMarn is an AI character runtime that runs entirely on the user's own Android device. Models, speech and memory stay on the device and work offline. Beyond conversation it operates the phone and a paired computer, and advances several tasks at once. Open source, free, no account required.">
 
@@ -23,6 +23,20 @@
 <link rel="alternate" hreflang="zh-CN" href="../">
 <link rel="alternate" hreflang="en" href="../en/">
 <link rel="stylesheet" href="../assets/site.css">
+<link rel="stylesheet" href="../assets/light.css">
+<script>
+/* 首屏前确定主题，避免闪烁。未保存过选择时跟随系统。 */
+(function(){
+  try{
+    var t = localStorage.getItem('conmarn-theme');
+    if(t === 'light' || t === 'dark'){
+      document.documentElement.setAttribute('data-theme', t);
+    } else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches){
+      document.documentElement.setAttribute('data-theme','light');
+    }
+  }catch(e){}
+})();
+</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -32,6 +46,7 @@
   <div class="wrap">
     <a class="brand" href="../"><b>ConMarn</b><span class="ver">3.1.1</span></a>
     <div class="nav-links"><a href="#desktop">Desktop</a><a href="#difference">Differences</a><a href="#flow">Flow</a><a href="#capabilities">Capabilities</a><a href="#mechanisms">Design</a><a href="#privacy">Privacy</a><a href="#spec">Specs</a></div>
+    <button class="theme-toggle" type="button" aria-label="Toggle theme" title="Toggle theme"><span class="i-sun" aria-hidden="true">☀</span><span class="i-moon" aria-hidden="true">🌙</span></button>
     <a class="lang" href="../index.html" hreflang="zh-CN" title="切换到中文">中文</a>
     <a class="nav-dl" href="../ConMarn-3.1.1.apk" download>Download</a>
   </div>
@@ -229,5 +244,6 @@
 </footer>
 
 <script src="../assets/site.js" defer></script>
+<script src="../assets/theme.js" defer></script>
 </body>
 </html>

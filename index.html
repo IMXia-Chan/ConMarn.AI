@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="dark light">
 <title>ConMarn——基于端侧大模型的本地优先多智能体协同与跨设备执行系统</title>
 <meta name="description" content="ConMarn 是基于端侧大模型的本地优先多智能体协同与跨设备执行系统。模型、语音与记忆全部保留在本机，断网可用；除对话之外，还能操作手机与电脑，并同时推进多项任务。开源、免费、无账号。">
 
@@ -23,6 +23,20 @@
 <link rel="alternate" hreflang="zh-CN" href="./">
 <link rel="alternate" hreflang="en" href="./en/">
 <link rel="stylesheet" href="./assets/site.css">
+<link rel="stylesheet" href="./assets/light.css">
+<script>
+/* 首屏前确定主题，避免闪烁。未保存过选择时跟随系统。 */
+(function(){
+  try{
+    var t = localStorage.getItem('conmarn-theme');
+    if(t === 'light' || t === 'dark'){
+      document.documentElement.setAttribute('data-theme', t);
+    } else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches){
+      document.documentElement.setAttribute('data-theme','light');
+    }
+  }catch(e){}
+})();
+</script>
 </head>
 <body>
 <a class="skip" href="#main">跳到正文</a>
@@ -32,6 +46,7 @@
   <div class="wrap">
     <a class="brand" href="./"><b>ConMarn</b><span class="ver">3.1.1</span></a>
     <div class="nav-links"><a href="#desktop">电脑端</a><a href="#difference">差异</a><a href="#flow">运转</a><a href="#capabilities">能力</a><a href="#mechanisms">机制</a><a href="#privacy">隐私</a><a href="#spec">规格</a></div>
+    <button class="theme-toggle" type="button" aria-label="切换主题" title="切换主题"><span class="i-sun" aria-hidden="true">☀</span><span class="i-moon" aria-hidden="true">🌙</span></button>
     <a class="lang" href="en/index.html" hreflang="en" title="Switch to English">EN</a>
     <a class="nav-dl" href="./ConMarn-3.1.1.apk" download>下载 APK</a>
   </div>
@@ -229,5 +244,6 @@
 </footer>
 
 <script src="./assets/site.js" defer></script>
+<script src="./assets/theme.js" defer></script>
 </body>
 </html>
