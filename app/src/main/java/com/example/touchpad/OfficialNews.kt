@@ -36,7 +36,7 @@ import java.util.Locale
  *   · 解析出零条就当这一路失败，用别的来源，不写一块空白；
  *   · 标题形态奇怪的（「更多」「专题」「首页」这种导航文字）直接丢掉。
  *
- * ## 和「云端兜底」的关系
+ * ## 和「云端总闸」的关系
  *
  * 和热点、天气、语录一样归那道总闸管：关着就不发。
  */
@@ -96,7 +96,7 @@ internal object OfficialNews {
     fun ymd(ms: Long): String = SimpleDateFormat("yyyyMMdd", Locale.CHINA).format(Date(ms))
 
     private fun get(app: Context, url: String, cs: java.nio.charset.Charset): String? = try {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+        val conn = CloudNet.conn(url, app).apply {
             connectTimeout = TIMEOUT
             readTimeout = TIMEOUT
             requestMethod = "GET"

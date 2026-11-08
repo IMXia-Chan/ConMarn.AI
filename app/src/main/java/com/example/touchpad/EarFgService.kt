@@ -46,19 +46,29 @@ class EarFgService : Service() {
             foregrounded = true
             failure = null
         } catch (e: Exception) {
-            // mic 类型被拒(最常见:它是在后台被拉起来的)。降级成不带类型,至少服务活着、不崩;
-            // 但「后台能录」这条就不成立了 —— 记下来,别装死。
+            // mic 类型被拒(最常见:这次是从真正的后台起来的,没有任何豁免)。
+            //
+            // ★★ 2026-11-08(体检 A3/E6):原来是「降级成不带类型再起一次」,而
+            //   `startForeground(id, notif, 0)` 传的类型是 **0** —— API 29 起这就是
+            //   非法值,当场抛 IllegalArgumentException;就算不抛,Android 14+ 也不许
+            //   一个声明了类型的服务用「无类型」进前台。
+            //   也就是说那条降级路**一次都没成功过**,只是被 catch 吞了。
+            //
+            //   现在不降级了:mic 类型起不来 = 「后台能录」这条不成立 = 这台牌子上
+            //   写着「正在听你说话」是句假话。**收手,不挂假牌子**,原因落进日志。
             failure = "mic类型前台起不来(${e.javaClass.simpleName})"
             ModelManager.get(this).trace("耳:EarFg $failure")
-            try {
-                startForeground(NOTIF_ID, buildNotification(), 0)
-            } catch (e2: Exception) {
-                failure = "前台服务起不来(${e2.javaClass.simpleName})"
-                ModelManager.get(this).trace("耳:EarFg $failure")
-            }
+            foregrounded = false
+            stopSelf()
+            return START_NOT_STICKY
         }
         // 它只是「正在录音」这块牌子,死了别自己复活 —— 复活出来的是一条没人会停的常驻通知。
         return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        foregrounded = false
+        super.onDestroy()
     }
 
     private fun buildNotification(): Notification {
@@ -74,7 +84,9 @@ class EarFgService : Service() {
         )
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("ConMarn")
-            .setContentText("正在听你说话")
+            // ★ 这条牌子在整场语音对话期间都挂着（麦克风在她说话时是关的，
+            //   见半双工闸），所以写「正在听你说话」并不总成立 —— 说「对话进行中」。
+            .setContentText("语音对话进行中")
             .setSmallIcon(R.drawable.ic_launcher)
             .setContentIntent(open)
             .setOngoing(true)
@@ -83,7 +95,8 @@ class EarFgService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "conmarn_ear"
-        private const val NOTIF_ID = 3
+        // ★ 原来是 3 —— 和 [WakeService] 撞号，两边同时跑时后挂的那条会把前一条顶掉。
+        private const val NOTIF_ID = 4
 
         /** 「mic 资格真的挂上了」。Ear 在起 `AudioRecord` **之前**等它(见 Ear.run)。 */
         @Volatile var foregrounded = false

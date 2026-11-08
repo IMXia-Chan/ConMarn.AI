@@ -40,7 +40,7 @@ import java.net.URL
  * ★ 取不到就用盘上有的；盘上也没有，退回内置那批（[Quotes.LIST]）—— 三种情况都有话说，
  *   不会出现一块空着的框。
  *
- * ## 和「云端兜底」的关系
+ * ## 和「云端总闸」的关系
  *
  * 和热点、天气一样归那道总闸管：关着就一个字节都不发，只用盘上与内置的。
  */
@@ -166,7 +166,7 @@ internal object QuoteFeed {
     }
 
     private fun get(app: Context, url: String): String? = try {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+        val conn = CloudNet.conn(url, app).apply {
             connectTimeout = TIMEOUT
             readTimeout = TIMEOUT
             requestMethod = "GET"

@@ -226,6 +226,18 @@ object Sandbox {
             SandboxMath.reject(cmd)?.let { return err(it) }
         }
 
+        // ★★ 2026-11-08(体检 B1):**云端总闸关着,沙盒里也不许出网。**
+        //   [SKIP] 只是不建软链,`bin/busybox` 始终在 —— `busybox wget` 照样下载;
+        //   `linux` 那条更是一整台发行版,装个 curl 就出去了。
+        //   这两条路都在 Java 层看不见 socket,只能在这儿按命令词拦。
+        //   ★ 拦不住的是「装个解释器自己开 socket」和按 IP 直连 —— 见 [SandboxMath.usesNetwork]。
+        if (!CloudNet.isOpen(ctx) && SandboxMath.usesNetwork(cmd)) {
+            return err(
+                "「云端总闸」关着 —— 这条命令会联网(wget/curl/apk add 这类),已经拦下。" +
+                    "本机上的命令照常跑;要用联网命令,去设置里把「云端总闸」打开。"
+            )
+        }
+
         val ready = if (tool == "linux") ensureProot(ctx) else ensure(ctx)
         if (ready != null) return err(ready)
 
@@ -541,7 +553,18 @@ object Sandbox {
         }.getOrNull().orEmpty()
         // 拿不到就用国内公共 DNS 顶上 —— 总比一个名字都解析不了强。
         val list = servers.ifEmpty { listOf("223.5.5.5", "119.29.29.29") }
-        val text = list.joinToString("") { "nameserver $it\n" }
+        // ★★ 2026-11-08：沙盒里的 Linux 是**另一个进程**，它的 socket 在 Java 层看不见，
+        //   所以云端总闸管不到它（这是这道闸唯一拦不住的地方，写在这儿不藏着）。
+        //   能做的两件事都在这里：闸关着时把 DNS 指到一个没人听的地址、并塞一个死代理，
+        //   常规工具（apk/curl/wget）就解析不了也连不出去。
+        //   **拦不住的**：写死 IP 的静态二进制。要让那种也停，只能不给它网络 ——
+        //   那是 proot 做不到的事。
+        val cloudOff = !CloudNet.isOpen(ctx)
+        val text = if (cloudOff) {
+            "nameserver 127.0.0.1\n"
+        } else {
+            list.joinToString("") { "nameserver $it\n" }
+        }
         val f = File(rootfs(ctx), "etc/resolv.conf")
         runCatching {
             f.parentFile?.mkdirs()
@@ -597,6 +620,16 @@ object Sandbox {
             //   别名由 [ALIAS_REPAIR] 在装包之后补成软链,这才是 gcc 能跑的原因。
         ).toMutableMap().apply {
             if (trace) put("PROOT_TRACE_SYS", "1")
+            // ★★ 2026-11-08(体检 B1 的配套):[refreshDns] 那段注释里写了「塞一个死代理」,
+            //   但这一格原来**根本没塞** —— apk/curl 走 http_proxy 时照样直连。
+            //   闸关着时把它们指到本机一个没人听的端口:常规工具当场连接被拒,
+            //   而不是先解析、再慢慢超时。写死 IP 的静态二进制仍然拦不住(见那段注释)。
+            if (!CloudNet.isOpen(ctx)) {
+                for (k in listOf("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY")) {
+                    put(k, "http://127.0.0.1:9")
+                }
+                put("no_proxy", "127.0.0.1,localhost")
+            }
         },
         )
     }

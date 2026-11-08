@@ -72,7 +72,7 @@ object HerBoot {
                 mm.trace("HerBoot:已有线程在盯(${mm.state}),不重复起")
                 return
             }
-            job = Thread({ watch(mm, agent) }, "ruoxi-boot").apply {
+            job = Thread({ watch(app, mm, agent) }, "ruoxi-boot").apply {
                 isDaemon = true
                 start()
             }
@@ -119,13 +119,13 @@ object HerBoot {
     }
 
     /** 盯装载状态。只在 READY 时预热;起不来就安静退出,不弹错误(MainActivity 那边会弹)。 */
-    private fun watch(mm: ModelManager, agent: AiAgent) {
+    private fun watch(app: Context, mm: ModelManager, agent: AiAgent) {
         mm.trace("HerBoot:开始盯装载,state=${mm.state}")
         val deadline = System.currentTimeMillis() + READY_TIMEOUT_MS
         while (System.currentTimeMillis() < deadline) {
             when (mm.state) {
                 ModelManager.State.READY -> {
-                    warmUp(mm, agent)
+                    warmUp(app, mm, agent)
                     return
                 }
                 ModelManager.State.FAILED,
@@ -146,10 +146,47 @@ object HerBoot {
      * 原文照搬自 MainActivity.warmUpLocalModel():那一段本来就和界面无关,
      * 搬过来只是把「谁触发」从 Activity 换成任何人。
      */
-    private fun warmUp(mm: ModelManager, agent: AiAgent) {
+    private fun warmUp(app: Context, mm: ModelManager, agent: AiAgent) {
         Thread {
             val t0 = System.currentTimeMillis()
-            val err = agent.warmUp()
+            var err = agent.warmUp(app)
+            // ★★ 2026-11-08:被「有任务在跑」挡掉之后,**必须等它闲下来补跑一次**。
+            //
+            //   不补的话这里是个死循环(真机连开两次机都撞上了):
+            //     用户第一句话 → 预热看见 running 让路 → 用户那一条 120 秒被杀
+            //     → 超时那条路刻意不存快照 → 快照永远存不下来 → 下次还是冷算。
+            //   冷算十几分钟,而它只肯在「没人用」的时候算,用户又总在他一打开就发话。
+            //
+            //   上限 10 分钟:他真的一直在连着说话,那就别等了,下一轮开机再说。
+            // ★★ 2026-11-08：又多了**第二个**要等的理由 —— 手机太热或没插电，
+            //   冷算被 [PrefillGate] 挡回去了。两种理由的等法完全不同：
+            //     · 「有任务在跑」：用户就在旁边，几十秒后可能就闲了 ⇒ 2 秒一问，最多 10 分钟；
+            //     · 「等凉了再算」：要等的是**温度**，那是几十分钟级的量 ⇒ 3 分钟一问，最多 2 小时。
+            //   混成一种等法的话，热的那一种会 2 秒空转 10 分钟后放弃，永远等不到凉。
+            var coolUntil = 0L
+            var busyUntil = 0L
+            while (err != null) {
+                val now = System.currentTimeMillis()
+                val cool = err.contains(COOL_MARK)
+                if (!cool && !err.contains("有任务在跑")) break
+                if (cool) {
+                    if (coolUntil == 0L) coolUntil = now + COOL_RETRY_WINDOW_MS
+                    if (now >= coolUntil) {
+                        mm.trace("HerBoot:等了 ${COOL_RETRY_WINDOW_MS / 60_000} 分钟还是太热或没插电,这一轮不算了")
+                        break
+                    }
+                } else {
+                    if (busyUntil == 0L) busyUntil = now + WARMUP_RETRY_WINDOW_MS
+                    if (now >= busyUntil) break
+                }
+                Thread.sleep(if (cool) COOL_RETRY_MS else WARMUP_RETRY_MS)
+                if (agent.isRunning) continue
+                mm.trace(
+                    if (cool) "HerBoot:手机还热或没插电,过几分钟再试一次"
+                    else "HerBoot:刚才预热被挤掉了,现在没人用,补跑一次"
+                )
+                err = agent.warmUp(app)
+            }
             val cost = System.currentTimeMillis() - t0
             mm.trace(
                 if (err == null) "预热完成 ${cost}ms(用户第一轮将命中前缀缓存)"
@@ -157,4 +194,24 @@ object HerBoot {
             )
         }.apply { isDaemon = true; name = "ruoxi-warmup" }.start()
     }
+
+    /** 等「没人用」的窗口有多长。见 [warmUp]。 */
+    private const val WARMUP_RETRY_WINDOW_MS = 10 * 60 * 1000L
+
+    /** 补跑之前的轮询间隔。 */
+    private const val WARMUP_RETRY_MS = 2_000L
+
+    /** [AiAgent.warmUp] 里「冷算先不开」那句话的记号。两边必须同一串字。 */
+    private const val COOL_MARK = "等凉了再算"
+
+    /**
+     * 「等凉」最多等多久：2 小时。
+     *
+     * ★ 再长就没意义了 —— 那已经不是「等一会儿」，是「挂着一个线程等半天」。
+     *   下一轮开机/下一次回前台会重新走一遍 [ensure]，自然再排一次队。
+     */
+    private const val COOL_RETRY_WINDOW_MS = 120 * 60 * 1000L
+
+    /** 等温度变化用 3 分钟一问：温度是分钟级的量，2 秒一问是空转。 */
+    private const val COOL_RETRY_MS = 180_000L
 }

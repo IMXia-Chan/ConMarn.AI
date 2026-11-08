@@ -77,7 +77,22 @@ class HerLifeService : Service() {
         } catch (e: Exception) {
             // specialUse 被这台机器的策略拒了(Android 17 太新,只能实测)。
             // 记下来 —— 静默降级会让我们以为「她一直在」生效了,其实没有。
-            ModelManager.get(this).trace("HerLife:specialUse 前台服务起不来(${e.message}),服务将不被保活")
+            ModelManager.get(this).trace(
+                "HerLife:specialUse 前台服务起不来(${e.message}) —— 收掉这一轮," +
+                    "别让系统判 RemoteServiceException"
+            )
+            // ★★ 2026-11-08(体检 E4):**起不来就必须收手**。
+            //   所有调用方走的都是 `startForegroundService()`(见 BootReceiver / HerBoot /
+            //   ConMarnActivity.toggleAlive),而系统对这条路的判据是
+            //   「五秒内真的进入过前台」。`startForeground()` 抛了 = 没进去 ——
+            //   原来这里只 trace 然后继续往下装载模型,几秒后系统抛
+            //   RemoteServiceException 把进程崩掉,**而且崩在模型装载中途**。
+            //   现在当场 stopSelf,并返回 START_NOT_STICKY:
+            //   · 盘上的 `alive` **不动**(他不该因为一次系统策略被拒就失去这个开关);
+            //   · 下一次他打开房间,HerBoot / 房间入口会照盘上的「开」再挂一次。
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
         }
 
         val mm = ModelManager.get(this)

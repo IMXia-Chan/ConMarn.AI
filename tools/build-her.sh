@@ -4,7 +4,7 @@
 #
 # ★★ 为什么必须有这个脚本 —— 2026-10-04 立的:
 #
-# 在这之前,这条路**全靠手**:源码在 `her-src/src/her.js`,
+# 在这之前,这条路**全靠手**:源码在 `D:\her-build\web\src\her.js`,
 # 手工 `esbuild` 打包,再手工把两个文件拷进 `app/src/main/assets/her/`。
 # `package.json` 连 `scripts` 字段都没有。
 #
@@ -24,8 +24,7 @@ set -euo pipefail
 
 # 脚本在 <repo>/tools/ 下,所以 repo 根是它的上一级
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# 源码默认在仓库里的 her-src/;放别处就 export HER_SRC=<那个目录>
-SRC="${HER_SRC:-$REPO/her-src}"
+SRC="D:/her-build/web"
 DEST="$REPO/app/src/main/assets/her"
 
 CHECK_ONLY=0
@@ -34,7 +33,7 @@ CHECK_ONLY=0
 die() { echo "✗ $*" >&2; exit 1; }
 ok()  { echo "✓ $*"; }
 
-[ -d "$SRC/src" ] || die "找不到她的源码目录:$SRC/src(可用 HER_SRC 指定)"
+[ -d "$SRC/src" ] || die "找不到她的源码目录:$SRC/src(D:\\her-build 那份)"
 [ -f "$SRC/src/her.js" ] || die "找不到 $SRC/src/her.js"
 [ -x "$SRC/node_modules/.bin/esbuild" ] || die "esbuild 不在。先 cd $SRC && npm install"
 
@@ -84,8 +83,10 @@ done
 if [ -f "$DEST/sample.vrm" ]; then
   ok "sample.vrm 在 ($(sz "$DEST/sample.vrm") 字节)"
 else
-  echo "⚠ sample.vrm **不在** $DEST —— 她出不了场。把自己的 VRM 拷成 $DEST/sample.vrm(仓库里不含模型文件)。" >&2
+  echo "⚠ sample.vrm **不在** $DEST —— 她出不了场。从 $SRC/../vrm/sample.vrm 拷一份。" >&2
 fi
 
 echo
-echo "下一步:出包 —— ./gradlew --rerun-tasks :app:assembleRelease"
+echo "下一步:出包 —— GRADLE_USER_HOME=/d/gradle \\"
+echo "  /d/gradle/wrapper/dists/gradle-9.6.0-bin/42k10rwplmzkhuboz9kdazi7s/gradle-9.6.0/bin/gradle \\"
+echo "  --rerun-tasks :app:assembleRelease"

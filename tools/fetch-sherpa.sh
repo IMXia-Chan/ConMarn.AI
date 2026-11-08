@@ -26,8 +26,8 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TAG="v1.13.8"
 TARBALL="sherpa-onnx-${TAG}-android.tar.bz2"
 URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/${TAG}/${TARBALL}"
-# 模型和 native 库都不进仓库,所以暂存在仓库外面(可用 SHERPA_STAGE 指定)。
-STAGE="${SHERPA_STAGE:-$HOME/voice-lab/_vendor}"
+# 模型和 native 库都不进仓库,所以暂存在仓库外面。
+STAGE="/c/Users/27014/voice-lab/_vendor"
 
 JNI_DIR="$REPO/app/src/main/jniLibs/arm64-v8a"
 KT_DIR="$REPO/app/src/main/java/com/k2fsa/sherpa/onnx"
@@ -107,7 +107,7 @@ ok "两个 .so 就位"
 #   全拿一共约 132KB,编译代价可以忽略。
 # ★ 包名 `com.k2fsa.sherpa.onnx` **一个字都不能改** —— JNI 按类名注册 native 方法。
 echo "· 取 Kotlin 源码(整个 kotlin-api/)"
-# 需要代理时先在环境里 export ALL_PROXY / HTTPS_PROXY,脚本不自带默认值。
+export ALL_PROXY="${ALL_PROXY:-socks5h://127.0.0.1:10808}"
 FILES=$(gh api "repos/k2-fsa/sherpa-onnx/contents/sherpa-onnx/kotlin-api?ref=$TAG" \
         --jq '.[] | select(.name|endswith(".kt")) | .name' 2>/dev/null)
 [ -n "$FILES" ] || die "列不出上游文件(gh 没登录?代理没起?)"

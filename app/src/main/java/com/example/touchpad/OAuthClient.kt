@@ -258,7 +258,7 @@ object OAuthClient {
     // ------------------------------------------------------------------
 
     private fun postForm(url: String, body: String, provider: String): Pair<Int, String> {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+        val conn = CloudNet.conn(url).apply {
             requestMethod = "POST"
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS

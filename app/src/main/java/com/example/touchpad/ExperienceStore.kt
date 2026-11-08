@@ -1,6 +1,7 @@
 package com.example.touchpad
 
 import android.content.Context
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -416,18 +417,19 @@ object ExperienceStore {
     /** 先写临时文件再改名 —— 中途被杀不至于留下半截 JSON(那会让整库读不出来)。 */
     private fun save() {
         val f = file ?: return
+        // ★★ 2026-11-08(体检):落盘失败**不能影响主流程**,但也不能一声不吭 ——
+        //   原来这里是个空 catch,写不进去的时候「刚学到的一条经验」凭空消失。
+        //   统一走 [AtomicWrite](`.tmp` + 原子换名),失败至少留一行日志。
         try {
             val root = JSONObject()
                 .put("version", 1)
                 .put("items", JSONArray().apply { items.forEach { put(it.toJson()) } })
-            val tmp = File(f.parentFile, f.name + ".tmp")
-            tmp.writeText(root.toString(), Charsets.UTF_8)
-            if (!tmp.renameTo(f)) {
-                f.writeText(root.toString(), Charsets.UTF_8)
-                tmp.delete()
+            if (!AtomicWrite.replace(f, root.toString())) {
+                Log.w("ExperienceStore", "经验库写不进去:${f.path}")
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             // 落盘失败绝不能影响主流程(和 BehaviorLogger 同一条规矩)。
+            Log.w("ExperienceStore", "经验库序列化失败", e)
         }
     }
 }

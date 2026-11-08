@@ -130,7 +130,7 @@ object SelfHand {
         ),
         t(
             "web_search", "上网搜一个词，**把搜索结果读回来**（标题、链接、摘要，外加前两条的正文）。" +
-                "★ 「云端兜底」关着时不联网，只会用浏览器打开搜索页",
+                "★ 「云端总闸」关着时不联网，只会用浏览器打开搜索页",
             listOf(p("query", "要搜的词")),
             listOf("query")
         ),
@@ -388,7 +388,7 @@ object SelfHand {
     /**
      * 搜索。
      *
-     * ★ 两种行为**由「云端兜底」这个开关决定**，而不是我们自己挑：
+     * ★ 两种行为**由「云端总闸」这个开关决定**，而不是我们自己挑：
      *   开着 → 真去搜（用户的词会发给必应），把结果读回来；
      *   关着 → 一个字节都不出手机，退回原来「用浏览器打开搜索页」。
      *   那个开关在设置页上明写着「关掉 = 一个字节都不出手机」，这里必须对得上，
@@ -400,8 +400,8 @@ object SelfHand {
             val r = openUrl(ctx, SelfHandMath.searchUrl(q), what = "搜索")
             if (r.optBoolean("ok")) r.put(
                 "note",
-                "「云端兜底」关着，所以我没替你去读搜索结果，只把搜索页打开了。" +
-                    "要我自己读结果，去设置里把「云端兜底」打开。"
+                "「云端总闸」关着，所以我没替你去读搜索结果，只把搜索页打开了。" +
+                    "要我自己读结果，去设置里把「云端总闸」打开。"
             )
             return r
         }
@@ -437,8 +437,22 @@ object SelfHand {
         if (url.isBlank()) return err("没说$what。")
         val good = SelfHandMath.urlOf(url)
             ?: return err("「$url」不是一个 http/https 网址,我不开这种链接(只认 http 和 https)。")
+        // ★★ 2026-11-08(体检 B4)：**总闸关着就不往浏览器里送。**
+        //
+        //   这条路上发出去的请求走的是**浏览器那个 App**，完全不经过 [CloudNet] ——
+        //   也就是说总闸关着的时候，「打开这个网页」成了全项目唯一一条还能出网的路。
+        //   本轮把沙箱命令、房间 WebView、工作台页面全堵上了，漏下的就是这里。
+        //
+        //   ★ 本机 / 局域网地址照开（`CloudNet.allow` 认它们）—— 「打开电脑上那个页面」
+        //     不该被总闸连坐。
+        val host = Uri.parse(good).host
+        if (!CloudNet.allow(host)) {
+            return err(
+                "「云端总闸」关着 —— 「$good」要出网（${host ?: "这个地址"}），先把它打开我再开。"
+            )
+        }
         // ★ **不指定浏览器包名** —— 让系统按用户自己的默认浏览器打开。
-        // 我们不替他选 App,也不塞任何 extra。
+        // 我们不替他选 App，也不塞任何 extra。
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(good))
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return start(ctx, intent, ok = "已经在浏览器里打开了。", subject = "打开$what")

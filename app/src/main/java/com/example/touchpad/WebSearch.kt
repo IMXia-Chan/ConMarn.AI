@@ -240,7 +240,7 @@ object WebSearch {
     }
 
     private fun get(url: String, timeoutMs: Int, accept: String): String {
-        val c = URL(url).openConnection() as HttpURLConnection
+        val c = CloudNet.conn(url)
         try {
             c.requestMethod = "GET"
             // 不带 UA 时必应会回一个空壳（和 GitHub 的 403 同类问题）。

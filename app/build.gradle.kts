@@ -22,8 +22,8 @@ android {
         applicationId = "com.conmarn.app"
         minSdk = 30          // Wi-Fi 方案无高版本 API 要求,30 足够(可再降低)
         targetSdk = 37
-        versionCode = 31
-        versionName = "3.1"
+        versionCode = 32
+        versionName = "3.1.1"
     }
 
     signingConfigs {

@@ -115,7 +115,7 @@ print("\n[2] 日常的报错 / 代码 / 日志:一个字符都不许动")
 SAFE = [
     # ── 报错与代码 ──
     'requests.exceptions.ConnectionError: HTTPConnectionPool(host=\'127.0.0.1\', port=8080): Max retries exceeded',
-    'File "C:\\app\\pc-server\\ai_tools.py", line 1411, in _read_screen',
+    'File "C:\\Users\\27014\\phone-touchpad\\pc-server\\ai_tools.py", line 1411, in _read_screen',
     "Traceback (most recent call last):\n  ValueError: invalid literal for int() with base 10: '1411'",
     "const MAX_RETRY = 3; const TIMEOUT_MS = 25000;",
     "sha256=9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
@@ -166,7 +166,7 @@ check("  真的那几张照样算", all(ai_tools.card_shape_ok(d) for d in
 # ===========================================================================
 # 三、回执里不许出现命中的值
 #
-# 老规矩:回的是**类别名**,不是命中的那个东西。
+# 同 `_risky_app` 那条老规矩:回的是**类别名**,不是命中的那个东西。
 # 连「我遮了它」这个理由里都不该带原文。
 # ===========================================================================
 print("\n[3] 只回类别名,不回值")

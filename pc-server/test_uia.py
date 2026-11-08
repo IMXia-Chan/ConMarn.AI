@@ -25,7 +25,7 @@ import os
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, r"C:\Users\27014\phone-touchpad\pc-server")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 # 和 ai_tools.py:68-77 保持一致。不一致的话,在缩放 >100% 的屏上这个测试量的

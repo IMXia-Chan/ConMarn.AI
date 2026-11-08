@@ -729,6 +729,78 @@ while ($true) {
             continue
         }
 
+        # setvalue:把一个**值**直接写进控件(ValuePattern),不点、不打字、不管焦点。
+        #
+        # ★ 它和 type 的区别是「跨应用读写」这件事的另一半:
+        #   type 是往**前台那个焦点框**里敲字,焦点一跑就敲进别处;
+        #   setvalue 是**指名道姓**往某个控件里写,前台是谁都不影响。
+        #   反过来,它只对支持 ValuePattern 且**不是只读**的控件有效 ——
+        #   不支持就如实回错,让上层退回 click_ui + type,别硬来。
+        #
+        # ★ 写完当场**读回来比一次**(回执 verified)。这个项目的规矩:
+        #   「发出去了」不许当成「打进去了」—— SetValue 不抛异常只说明它收下了。
+        if ($cmd -eq 'setvalue') {
+            $val = [string]$req.value
+            $found = Find-Scoped $want '' 8 $req.window $true $true
+            if ($null -eq $found) {
+                Reply @{ ok = $false; error = "没有找到窗口「$($req.window)」" }; continue
+            }
+            if ($found.hits.Count -eq 0) {
+                Reply @{ ok = $false; error = "没有叫「$want」的控件" }; continue
+            }
+            $tried = 0
+            $roHit = $null
+            $done = $false
+            foreach ($hit in $found.hits) {
+                $el = $hit._el
+                $vp = $null
+                try { $vp = $el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern) } catch { $vp = $null }
+                if ($null -eq $vp) { continue }
+                $tried++
+                $ro = $true
+                try { $ro = [bool]$vp.Current.IsReadOnly } catch { $ro = $true }
+                if ($ro) { $roHit = $hit; continue }
+
+                $old = ''
+                try { $old = [string]$vp.Current.Value } catch { $old = '' }
+                try {
+                    # PS 5.1 里动态方法调用不可靠,走反射(和上面 invoke 那段同一个写法)。
+                    $mi = $vp.GetType().GetMethod('SetValue')
+                    if ($null -eq $mi) { throw '这个控件不支持写入' }
+                    $mi.Invoke($vp, @($val)) | Out-Null
+                } catch {
+                    Reply @{ ok = $false; error = "写入失败:$($_.Exception.Message)"
+                             name = $hit.name; type = $hit.type }
+                    $done = $true
+                    break
+                }
+
+                # 验货:再拿一次 ValuePattern 读回来(不缓存,控件可能整个换了对象)
+                Start-Sleep -Milliseconds 120
+                $now = $null
+                try {
+                    $vp2 = $el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+                    $now = [string]$vp2.Current.Value
+                } catch { $now = $null }
+                $verified = 'unknown'
+                if ($null -ne $now) { $verified = ($now -eq $val) }
+                Reply @{ ok = $true; name = $hit.name; type = $hit.type
+                         window = $found.nm; offscreen = $hit.offscreen
+                         old = $old; now = $now; verified = $verified }
+                $done = $true
+                break
+            }
+            if ($done) { continue }
+            if ($null -ne $roHit) {
+                Reply @{ ok = $false; error = "控件「$($roHit.name)」是只读的,不能直接写"
+                         name = $roHit.name; type = $roHit.type }
+                continue
+            }
+            Reply @{ ok = $false; error = "「$want」不支持直接写入(ValuePattern)。改用 click_ui 点中它,再 type。"
+                     tried = $tried }
+            continue
+        }
+
         # probe:「屏幕上这一点是不是一个能打字的地方?」
         #
         # 手机端的「点电脑的输入框 → 手机上自动弹输入法」靠这一条。

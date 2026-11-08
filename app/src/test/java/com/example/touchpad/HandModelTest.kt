@@ -240,8 +240,8 @@ class HandModelTest {
     @Test
     fun `★ 抄了一半的主机名也认得,但只在只可能是一只的时候`() {
         // 电脑的 id 是主机名,4B 抄它十有八九要变形 —— 严格比较的代价是一整轮白跑。
-        val one = listOf(hand(id = "LAPTOP-DEMO01", kind = HandMath.KIND_PC), selfHand)
-        assertEquals("LAPTOP-DEMO01", HandMath.resolveId(one, "LAPTOP-DEM"))
+        val one = listOf(hand(id = "LAPTOP-M5QBJO9M", kind = HandMath.KIND_PC), selfHand)
+        assertEquals("LAPTOP-M5QBJO9M", HandMath.resolveId(one, "LAPTOP-M5Q"))
         // 两台都以 LAPTOP 开头时:分不出来就分不出来,别赌(赌错 = 去点另一台电脑的屏幕)。
         val two = listOf(
             hand(id = "LAPTOP-A", kind = HandMath.KIND_PC),

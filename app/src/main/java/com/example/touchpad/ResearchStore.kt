@@ -98,7 +98,9 @@ object ResearchStore {
             val all = f.readText()
             val keep = all.takeLast(GIVE_CHARS)
             val dropped = all.length - keep.length
-            f.writeText("（进度本超过上限，前面 $dropped 字已截掉）\n" + keep)
+            // ★★ 2026-11-08(体检):原来直接 `writeText` 重写 —— 进程在中途被杀,
+            //   留下半截文件,整本进度（含已证伪的结论）就都读不出来了,而且不报错。
+            AtomicWrite.replace(f, "（进度本超过上限，前面 $dropped 字已截掉）\n" + keep)
         } catch (_: Exception) {
         }
     }

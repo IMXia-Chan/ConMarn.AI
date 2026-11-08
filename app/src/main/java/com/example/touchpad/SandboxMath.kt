@@ -89,6 +89,29 @@ internal object SandboxMath {
         return null
     }
 
+    /**
+     * 这条命令**会不会出网**。
+     *
+     * ★★ 2026-11-08(体检 B1):总闸关着时,`busybox wget` 完全绕开 [CloudNet] ——
+     *   [Sandbox.SKIP] 只是「不建软链」,`bin/busybox` 始终在;`linux` 那条更是一整台
+     *   发行版(装个 curl 就能连)。所以光靠 SKIP 不等于闸门成立。
+     *
+     * ★ 这是一道**词法上的门**,不是网络命名空间:沙盒和 App 共用同一个网络栈,
+     *   Android 又不许普通 App 建 netns。它封的是「明写出来的联网命令」,
+     *   不是「一切可能的出网」(装个 python 再开 socket 就绕过去了)。
+     *   这条边界必须照着说 —— 见 [Sandbox.refreshDns] 和 B2 那笔账。
+     */
+    private val NETWORK_CMD = Regex(
+        """(?i)(?:^|[\s;&|()'"`/+])(?:wget|nc|ncat|netcat|telnet|ftpget|ftpput|tftp|""" +
+            """ping6?|nslookup|httpd|udhcpc|udhcpd|curl|ssh|scp|sftp|socat)\b"""
+    )
+
+    /** `apk` 里会去仓库取东西的那几个子命令。`del`/`list` 是本地的,不在此列。 */
+    private val APK_NET = Regex("""(?i)\bapk\s+(?:add|update|upgrade|fetch|fix)\b""")
+
+    fun usesNetwork(cmd: String): Boolean =
+        NETWORK_CMD.containsMatchIn(cmd) || APK_NET.containsMatchIn(cmd)
+
     /** 输出太长时截断。★ 回执进的是上下文,**不截断等于拿一次 `find /` 把窗口撑爆**。 */
     fun clip(s: String, max: Int): String {
         val t = s.trimEnd()

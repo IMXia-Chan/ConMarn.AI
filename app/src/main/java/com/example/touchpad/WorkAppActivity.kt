@@ -10,6 +10,8 @@ import android.graphics.drawable.Icon
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.ViewGroup
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import java.io.File
@@ -99,7 +101,29 @@ class WorkAppActivity : Activity() {
             //   只对**这个应用自己的私有目录**放开：这里的文件全部是代码档自己写出来的。
             settings.allowFileAccessFromFileURLs = true
             settings.allowUniversalAccessFromFileURLs = true
-            webViewClient = WebViewClient()
+            // ★★ 2026-11-08：`allowUniversalAccessFromFileURLs` 的意思是「页面里的 fetch
+            //   想连谁就连谁」—— 它走 WebView 自己的网络栈，**不经过 App 的 Java 层**，
+            //   所以云端总闸本来拦不住它。这里把每一笔请求都过一遍闸门：
+            //   闸关着时，公网请求直接回 403，一个字节都不发出去。
+            //   （`file://` 和它引入的同目录 js/css 不受影响 —— 那是这个应用自己的文件。）
+            webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView,
+                    req: WebResourceRequest,
+                ): WebResourceResponse? {
+                    val u = req.url ?: return null
+                    val scheme = u.scheme?.lowercase()
+                    if (scheme != "http" && scheme != "https" &&
+                        scheme != "ws" && scheme != "wss"
+                    ) return null
+                    if (CloudNet.allow(u.host)) return null
+                    return WebResourceResponse(
+                        "text/plain", "utf-8", 403, "Cloud Off",
+                        mapOf("Cache-Control" to "no-store"),
+                        java.io.ByteArrayInputStream("云端总闸关着".toByteArray(Charsets.UTF_8)),
+                    )
+                }
+            }
             loadUrl("file://" + f.absolutePath)
         }
         web = w

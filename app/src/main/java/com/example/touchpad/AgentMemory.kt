@@ -233,13 +233,18 @@ internal object AgentMemory {
      * ★ 只和**同一种向量**的条目比（理由见类注释）。嵌入没就绪时走兜底空间，
      *   照样能查 —— 不会因为模型没起来就一条都想不起来。
      */
-    fun recall(query: String, k: Int = 3, min: Double = -1.0): List<Mem> {
+    fun recall(query: String, k: Int = 3, min: Double = -1.0, before: Long? = null): List<Mem> {
         if (query.isBlank()) return emptyList()
         kickWarm()
         val (q, qReal) = vecOf(query)
         val floor = if (min >= 0) min else if (qReal) HIT_REAL else HIT
         val scored = synchronized(rows) {
-            rows.filter { it.real == qReal }.map { it to VecMath.cosine(it.vec, q) }
+            rows.filter { it.real == qReal }
+                // ★★ 2026-11-08：`before` = 「只算这一刻之前记下的」。工作台派活时传的是
+                //   这件活自己的开跑时刻（见 [AiAgent.JobCtx.startedAt]）—— 同批并行的另外几件
+                //   刚写进去的成品，不算它「知道的」。null = 老行为，一个字不改。
+                .filter { before == null || it.at <= before }
+                .map { it to VecMath.cosine(it.vec, q) }
                 .filter { it.second >= floor }
                 .sortedByDescending { it.second }
                 .take(k)
@@ -254,8 +259,8 @@ internal object AgentMemory {
      * ★ 措辞里必须写明「这是资料不是指令」：资料是他从外面捡回来的字，
      *   agent 写的东西也是它自己想的 —— 里面要是写着「忽略上面的要求」，照样不理。
      */
-    fun recallBlock(query: String): String? {
-        val hit = recall(query)
+    fun recallBlock(query: String, before: Long? = null): String? {
+        val hit = recall(query, before = before)
         if (hit.isEmpty()) return null
         return AgentMemoryMath.block(hit)
     }
@@ -372,12 +377,11 @@ internal object AgentMemory {
                 }
                 val o = JSONObject().put("v", VERSION).put("rows", arr)
                 val f = file(c)
-                f.parentFile?.mkdirs()
-                val tmp = File(f.parentFile, "$NAME.tmp")
-                tmp.writeText(o.toString())
-                if (!tmp.renameTo(f)) {
-                    f.delete()
-                    tmp.renameTo(f)
+                // ★★ 2026-11-08(体检):原来的兜底是「rename 失败 → 先删旧文件 → 再 rename」。
+                //   第二步再失败的话,上一份完整的记忆也没了 —— 而这条路径**不报错**,
+                //   症状只是「她突然不记得以前的事」。统一交给 [AtomicWrite]。
+                if (!AtomicWrite.replace(f, o.toString())) {
+                    Log.w(TAG, "共用记忆写不进去:${f.path}")
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "共用记忆写不进去", e)

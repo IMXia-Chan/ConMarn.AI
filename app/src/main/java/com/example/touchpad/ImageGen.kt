@@ -122,7 +122,7 @@ object ImageGen {
     // ---------------------------------------------------------------- HTTP
 
     private fun post(url: String, key: String, body: String): String {
-        val c = URL(url).openConnection() as HttpURLConnection
+        val c = CloudNet.conn(url)
         return try {
             c.requestMethod = "POST"
             c.connectTimeout = 20_000
@@ -139,7 +139,7 @@ object ImageGen {
     }
 
     private fun get(url: String): ByteArray {
-        val c = URL(url).openConnection() as HttpURLConnection
+        val c = CloudNet.conn(url)
         return try {
             c.requestMethod = "GET"
             c.connectTimeout = 20_000

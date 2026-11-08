@@ -68,10 +68,13 @@ CREATE_NO_WINDOW = 0x08000000
 HERE = os.path.dirname(os.path.abspath(__file__))
 DROP_DIR = os.path.join(HERE, "人物")
 
-PKG_NAME = "com.example.touchpad"
-LAUNCHER = "com.example.touchpad/.ConMarnLauncher"
-PERSON_DIR = "/sdcard/Android/data/com.example.touchpad/files/person"
-MODEL_LOG = "/sdcard/Android/media/com.example.touchpad/model.log"
+# ★ 2026-11-08:applicationId 已从 com.example.touchpad 改成 com.conmarn.app
+#   (Java 包名仍是 com.example.touchpad,所以 Activity 类名不变)。
+#   这段常量还停在旧包名时,脚本会往一个不存在的目录推,而且**一步都不报错**。
+PKG_NAME = "com.conmarn.app"
+LAUNCHER = "com.conmarn.app/com.example.touchpad.ConMarnLauncher"
+PERSON_DIR = "/sdcard/Android/data/%s/files/person" % PKG_NAME
+MODEL_LOG = "/sdcard/Android/media/%s/model.log" % PKG_NAME
 
 # ★ 固定名。理由见文件头。
 TARGET_NAME = "model.vrm"
@@ -99,10 +102,8 @@ def find_adb() -> str:
     la = os.environ.get("LOCALAPPDATA")
     if la:
         cands.append(os.path.join(la, "Android", "Sdk", "platform-tools", "adb.exe"))
-    # adb 装在别处就 export ADB=<adb 的完整路径>
-    v = os.environ.get("ADB")
-    if v:
-        cands.append(v)
+    # 本机实测就是这个
+    cands.append(r"C:\Users\27014\AppData\Local\Android\Sdk\platform-tools\adb.exe")
     for c in cands:
         if c and os.path.isfile(c):
             return c

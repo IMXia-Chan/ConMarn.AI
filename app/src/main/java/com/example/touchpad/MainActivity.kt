@@ -759,7 +759,7 @@ class MainActivity : Activity() {
     }
 
     private fun showFoundList(found: List<Triple<String, Int, String?>>) {
-        // 有名字就显示名字 —— 「LAPTOP-XXXX:9527」和「这台笔记本:9527」,
+        // 有名字就显示名字 —— 「LAPTOP-M5QBJO9M:9527」和「这台笔记本:9527」,
         // 后者才让人选得动。没名字(旧电脑端)就退回 ip:port,照常能用。
         val labels = found.map { (ip, port, name) ->
             if (name.isNullOrBlank()) "$ip:$port" else "$name($ip:$port)"
@@ -999,6 +999,9 @@ class MainActivity : Activity() {
                 Thread {
                     val r = testCloud(url, key, model)
                     runOnUiThread {
+                        // 人已经退出去了就别再往一个没有 token 的窗口上弹框 ——
+                        // 那会抛 BadTokenException,和「连不上」毫无关系。
+                        if (isFinishing || isDestroyed) return@runOnUiThread
                         AlertDialog.Builder(this@MainActivity)
                             .setTitle(if (r.startsWith("OK")) "✅ 云端通了" else "❌ 云端没通")
                             .setMessage("$summary\n\n$r")
@@ -1085,25 +1088,33 @@ class MainActivity : Activity() {
                 org.json.JSONObject().put("role", "user").put("content", "hi")))
             .put("max_tokens", 1)
             .put("stream", false)
-        val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 15000
-            readTimeout = 30000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            setRequestProperty("Authorization", "Bearer $key")
-        }
+        // ★★ 2026-11-08:`CloudNet.conn` 必须**在 try 里面**。
+        //   它自己会抛 —— 地址没写 `http(s)://` 抛 MalformedURLException,云端总闸
+        //   关着抛 CloudClosed。写在 try 外面时,异常会从 :999 那个**没有 catch 的
+        //   Thread** 里逃出去,而全包没有全局异常处理器 → 点一下「测试云端连接」
+        //   App 就当场消失,连一句提示都没有。这是最常见的那条路:填了 key、
+        //   总闸还没拨,先点一下试试。
         return try {
-            conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            val code = conn.responseCode
-            val text = (if (code in 200..299) conn.inputStream else conn.errorStream)
-                ?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code in 200..299) "OK  HTTP $code\n${text.take(300)}"
-            else "HTTP $code\n${text.take(400)}"
+            val conn = CloudNet.conn(url, this).apply {
+                requestMethod = "POST"
+                connectTimeout = 15000
+                readTimeout = 30000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Authorization", "Bearer $key")
+            }
+            try {
+                conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                val code = conn.responseCode
+                val text = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                    ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code in 200..299) "OK  HTTP $code\n${text.take(300)}"
+                else "HTTP $code\n${text.take(400)}"
+            } finally {
+                conn.disconnect()
+            }
         } catch (e: Exception) {
             "连不上:${e.javaClass.simpleName} ${e.message.orEmpty()}"
-        } finally {
-            conn.disconnect()
         }
     }
 

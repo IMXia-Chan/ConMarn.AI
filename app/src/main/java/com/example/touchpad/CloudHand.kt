@@ -336,7 +336,7 @@ object CloudHand {
         body: String?,
         headers: Map<String, String> = emptyMap(),
     ): Pair<Int, String> {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+        val conn = CloudNet.conn(url).apply {
             requestMethod = method
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS

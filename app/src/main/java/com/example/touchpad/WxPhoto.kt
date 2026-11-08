@@ -89,6 +89,23 @@ internal object WxPhoto {
                 if (f.isFile && f.length() > 0L) return f.name
             }
         }
+
+        // ★★ 2026-11-08（他当场看见的）：退回 room2c 之前，还该有**这一级** ——
+        //   「同一种天气，随便哪个天光」。
+        //
+        //   真机上就是这样：06:15 天光从 night 翻到 dusk，外面下着毛毛雨，而这台机只装了
+        //   `wx-night-rain`、没有 `wx-dusk-rain` —— 上面三条一条都没命中，于是直接退回
+        //   room2c：**下着雨，天上挂着一个大月亮**。他看到的那张图就是它。
+        //
+        //   判据很简单：换一种**天光**，比换一种**天气**像得多。夜里的雨和黄昏的雨，
+        //   总比「晴天」更接近「外面在下雨」这件事。
+        val near = dir.listFiles().orEmpty().firstOrNull { f ->
+            val parts = f.name.substringBeforeLast('.').split('-')
+            f.isFile && f.length() > 0L &&
+                parts.size == 3 && parts[0] == "wx" && parts[2] == kind &&
+                EXTS.contains(f.extension.lowercase())
+        }
+        if (near != null) return near.name
         return null
     }
 }

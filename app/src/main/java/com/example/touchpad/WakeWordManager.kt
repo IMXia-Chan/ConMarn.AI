@@ -95,23 +95,27 @@ object WakeWordManager {
      */
     private const val KWS_DIR = "kws"
 
-    private const val ENCODER = "encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
-    private const val DECODER = "decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
-    private const val JOINER = "joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
-    private const val TOKENS = "tokens.txt"
-    private const val KEYWORDS = "keywords.txt"
+    // ★ 这五个名字和 [locate] 都是 `internal` 而不是 `private`:录入那边([WakeEnroll])
+    //   必须用**同一套**判据去找目录、拼文件名。两边各写一份的时候,一旦目录形状是
+    //   「kws/ 下面还套一层」的那种,录入就会把 keywords.txt 写进一个唤醒根本不读的地方,
+    //   而症状是「录好了却永远不响」—— 和录错、喊错完全分不开。
+    internal const val ENCODER = "encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
+    internal const val DECODER = "decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
+    internal const val JOINER = "joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
+    internal const val TOKENS = "tokens.txt"
+    internal const val KEYWORDS = "keywords.txt"
 
     private val WANT = listOf(ENCODER, DECODER, JOINER, TOKENS, KEYWORDS)
 
     // ------------------------------------------------------------------ 那三个数
 
     /** 见文件头:这一组是电脑上验过的那一组,**不要照库的默认值改**。 */
-    private const val KEYWORDS_SCORE = 1.0f
-    private const val KEYWORDS_THRESHOLD = 0.25f
-    private const val NUM_TRAILING_BLANKS = 1
+    internal const val KEYWORDS_SCORE = 1.0f
+    internal const val KEYWORDS_THRESHOLD = 0.25f
+    internal const val NUM_TRAILING_BLANKS = 1
 
     /** 她脑子里那份模型也在吃 CPU;这边给 2 个线程够它跟上实时了。 */
-    private const val NUM_THREADS = 2
+    internal const val NUM_THREADS = 2
 
     // ------------------------------------------------------------------ 状态
 
@@ -168,7 +172,7 @@ object WakeWordManager {
      * 所以两层都认。照 [Ear.locate] 的样子,**找不到就返回 `kws/` 本身**,
      * 让 [missingPieces] 去报缺了什么,不在这里替它猜路径。
      */
-    private fun locate(ctx: Context): File {
+    internal fun locate(ctx: Context): File {
         val root = kwsDir(ctx)
         if (hasAll(root)) return root
         val subs = root.listFiles { f -> f.isDirectory } ?: return root
@@ -275,12 +279,17 @@ object WakeWordManager {
      *   「按钮显示开着,而它其实一次都没听过」—— 真机踩过。
      * ★★ 而从 2026-10-08 起它们还必须**一起把 [WakeService] 那条通知收掉**:
      *   一条写着「语音唤醒开着」的常驻牌子挂在那儿,而她已经不在听了 —— 那也是谎。
+     *
+     * @param persistOff 要不要连盘上的开关一起改成「关」。默认要 —— 除了
+     *   「系统杀完自己重建、这一次没立住」那一路,理由见 [onServiceFailed]。
      */
-    private fun abort(ctx: Context, reason: String, toastMsg: String?) {
+    private fun abort(ctx: Context, reason: String, toastMsg: String?, persistOff: Boolean = true) {
         enabled = false
         main.removeCallbacks(poll)
-        ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_ON, false).apply()
+        if (persistOff) {
+            ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_ON, false).apply()
+        }
         ModelManager.get(ctx).trace("$TAG $reason")
         if (toastMsg != null) toast(ctx, toastMsg)
         stopListening()
@@ -292,9 +301,34 @@ object WakeWordManager {
      *
      * ★ 起点是那句「**起不来就绝不装着起得来**」:服务没挂上 = 后台那段时间听到的是静音
      *   = 喊她不应,而**一声不响**。所以当场把开关收回「关」,和他的按钮说同一句话。
+     *
+     * ★★ 2026-11-08(体检)分清两种「起不来」——
+     *
+     *   · `persistOff = true`(他去按开关、或者房间回前台时起的):当场收回「关」并弹一句话。
+     *     这时候有人在看屏幕,说什么都听得见。
+     *   · `persistOff = false`(系统把 START_STICKY 的服务**在后台重建**、这一次没立住):
+     *     **不许写盘**。原来两条路都写 `KEY_ON=false`,于是「夜里被系统杀了一次、重建时
+     *     恰好没立住」就把他白天打开的开关**永久关掉了** —— 屏幕上写着「关」,而且再也
+     *     不会自己开回来。现在只收内存里的这一轮(停监听、停服务),盘上仍是「开」;
+     *     下一次房间回到前台,`applySetting` 会照盘上的「开」再挂一次。
+     *     不弹 toast:那时候屏幕上多半没人。
      */
-    internal fun onServiceFailed(ctx: Context, why: String = "startForeground 失败") {
-        abort(ctx, "唤醒前台服务没起来($why) —— 后台听不到", "唤醒没起得来($why),先把它关了")
+    internal fun onServiceFailed(
+        ctx: Context,
+        why: String = "startForeground 失败",
+        persistOff: Boolean = true,
+    ) {
+        if (persistOff) {
+            abort(ctx, "唤醒前台服务没起来($why) —— 后台听不到", "唤醒没起得来($why),先把它关了")
+        } else {
+            abort(
+                ctx,
+                "唤醒前台服务没起来($why) —— 这一次是系统杀完自己重建的;" +
+                    "盘上的开关**保持开着**,她下次进房间时会再挂一次",
+                null,
+                persistOff = false,
+            )
+        }
     }
 
     // ------------------------------------------------------------------ 对表
@@ -346,8 +380,14 @@ object WakeWordManager {
             MicGate.WAKE,
             onChunk = { queue.offer(it) },
             onError = { why ->
-                // 麦真的坏了(拔了/被系统收回)。交给 loop 那一侧的收尾去停,这里只记一笔。
+                // 麦真的坏了(拔了/被系统收回)。
+                // ★★ 2026-11-08:这里**必须真的收工**,不能只记一笔 ——
+                //   麦断了以后解码线程并不会退出:它只是在空队列上每 30ms 转一圈,
+                //   `running` 一直是 true → 对表(poll)看到 running 就不再重开 →
+                //   症状是**唤醒静默死亡**(开关还开着,喊不应,也没有任何报错)。
+                //   走 main.post 是因为收工和开听都归主线程那条对表管。
                 ModelManager.get(ctx).trace("$TAG 唤醒的麦克风断了:$why")
+                main.post { stopListening() }
             },
         )
         val err = m.start()
@@ -357,7 +397,16 @@ object WakeWordManager {
             return
         }
 
-        val stream = sp.createStream()
+        // ★★ 2026-11-08:`createStream()` 是这一路上**唯一还会抛**的地方(native 分配失败
+        //   时抛 Error),而这一段跑在主线程(poll / arm 都直接调 startListening)。
+        //   抛出去 = 主线程崩 = App 消失。抓住它、把刚拿到的麦还回去,让下一轮对表再试。
+        val stream = try {
+            sp.createStream()
+        } catch (t: Throwable) {
+            ModelManager.get(ctx).trace("$TAG 唤醒这一轮建流失败 ${t.javaClass.name}: ${t.message}")
+            try { m.stop() } catch (_: Throwable) {}
+            return
+        }
         mic = m
         running = true
         worker = Thread({ loop(ctx, sp, stream, queue) }, "wake-kws").apply {
@@ -411,6 +460,72 @@ object WakeWordManager {
         ModelManager.get(ctx).trace("$TAG 唤醒模型就绪(${System.currentTimeMillis() - t0}ms)")
         return sp
     }
+
+    // ------------------------------------------------------------------ 录入唤醒词时借用麦克风
+
+    /**
+     * 录入唤醒词期间**把麦让出去**。见 [WakeEnroll]。
+     *
+     * ★ 为什么是 `post` 到主线程再等它跑完，而不是直接改字段：
+     *   [poll]、[startListening] 都在主线程上跑，从后台线程改 `enabled` 会和它们打架。
+     *   这里宁可**阻塞调用方两秒**——录入本来就是一个明确的前台动作，等一下没关系。
+     *
+     * ★ 让出让的是**麦克风**，不是那个开关：`enabled` 只是临时置假，
+     *   记在 [heldForEnroll] 里，录完由 [releaseMic] 原样放回去。
+     */
+    internal fun holdMic() {
+        val done = java.util.concurrent.CountDownLatch(1)
+        main.post {
+            try {
+                if (heldForEnroll == null) {
+                    heldForEnroll = enabled
+                    enabled = false
+                    main.removeCallbacks(poll)
+                    stopListening()
+                }
+            } finally {
+                done.countDown()
+            }
+        }
+        try { done.await(2, java.util.concurrent.TimeUnit.SECONDS) } catch (_: InterruptedException) {}
+    }
+
+    /** 录完把麦还回去。**录失败也必须调** —— 见 [WakeEnroll] 文件头。 */
+    internal fun releaseMic(ctx: Context) {
+        val app = ctx.applicationContext
+        appCtx = app
+        main.post {
+            val was = heldForEnroll ?: return@post
+            heldForEnroll = null
+            enabled = was
+            if (was) {
+                startListening(app)
+                main.postDelayed(poll, POLL_MS)
+            }
+        }
+    }
+
+    /**
+     * 关键词文件换了，把**旧的那份解码器**扔掉，下次开听时按新文件重建。
+     *
+     * ★ 不扔的话：关键词是在 `KeywordSpotter` 构造时读进内存的，改盘上的文件
+     *   对已经在跑的那个实例**没有任何影响** —— 表现就是「录完新词，喊新词不理，
+     *   喊旧词反而还灵」。
+     *
+     * ★★ 这里**只丢引用，不当场 `release()`**。`KeywordSpotter.release()` 就是
+     *   `finalize()`：它把 native 那块内存还给库。而 [stopListening] 不会 join 解码线程，
+     *   这一瞬间旧的 [loop] 可能正拿着同一个实例在 `decode()` —— 当场还内存就是
+     *   use-after-free（native 崩溃，Java 侧没有栈可看）。
+     *   丢掉引用之后，那个线程的栈还握着它，GC 不会收；线程退出、没人再引用，
+     *   `finalize()` 才会替我们释放。**迟几十毫秒释放，换掉一个随机崩溃。**
+     */
+    @Synchronized
+    internal fun reloadSpotter() {
+        spotter = null
+    }
+
+    /** 录入期间暂存的开关状态。null = 没在借用。 */
+    @Volatile private var heldForEnroll: Boolean? = null
 
     // ------------------------------------------------------------------ 解码
 

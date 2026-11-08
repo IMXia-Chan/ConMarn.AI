@@ -235,6 +235,23 @@ class SelfHandTest {
     }
 
     @Test
+    fun `★ 每个工具都在分级表里点过名，不许掉进默认的红`() {
+        // 漏填不会报错：那个工具每次调用都会变成「要他点一次确认」，而她做的
+        // 只是记一条日程、做一份文件 —— 反复弹框会让他学会无脑点「允许」。
+        // ★ 例外是**故意**红的：定一条定时任务 = 以后每天在没人看着的时候花他的云端额度。
+        //   要加进来得在这一行写明理由，不能顺手把上面的断言删掉。
+        val intentionallyRed = setOf("schedule_task")
+        val h = SelfHand.hand(0L)
+        for (t in SelfHand.tools) {
+            if (t.name in intentionallyRed) continue
+            assertNotEquals(
+                "${t.name} 没在 RiskGrade.selfLevel 里点名",
+                RiskLevel.RED, RiskGrade.level(h, t.name),
+            )
+        }
+    }
+
+    @Test
     fun `★ 她点不了手机自己的屏幕,所以没有这类工具`() {
         // 不是忘了,是**没有就是没有**(要 AccessibilityService,是另一轮的事)。
         // 这条测试是防止以后有人顺手加一个假的进去 —— 一个永远失败的工具

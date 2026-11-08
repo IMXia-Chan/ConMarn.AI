@@ -1056,6 +1056,16 @@ if files is not None:
     except Exception:
         pass
 
+# 电脑端 App 的本地桥接层(conmarn_app.py ↔ server.py)。
+# ★ 必须 bind **正在运行的这个模块**:server.py 以 __main__ 运行,app_bridge 里
+#   若自己 `import server` 会得到第二份全局状态(空的连接表、没有配对码)。
+#   桥接层只读状态、只调现成函数,不改事件的生产与消费。
+try:
+    import app_bridge
+    app_bridge.bind(sys.modules[__name__])
+except Exception:
+    app_bridge = None
+
 
 # ★★ **凭证不进日志** —— 2026-10-06。
 #
@@ -2181,13 +2191,21 @@ class _MediaPanelHost:
 
         if active:
             self._off_ticks = 0
+            # ★ 电脑端 App 在线时,媒体画面由 App 的「媒体」页呈现 —— 这里不再自动弹
+            #   Tk 面板,否则同一路画面会出现两个窗口。手动唤出的(_manual)不受影响,
+            #   停流自动收起那条逻辑也保持不变。
+            app_view = bool(
+                app_bridge is not None and app_bridge.is_attached() and not self._manual
+            )
             # 重新开始推流:若之前被用户收起,这轮可以再自动弹出来
             if rise and self._user_hidden:
                 self._user_hidden = False
-                self._show_console()
+                if not app_view:
+                    self._show_console()
             # 平时:没人收起就一直亮着;被收起后不再弹,等下一次 rise
             if not self._user_hidden and (self._console is None or not self._console.visible()):
-                self._show_console()
+                if not app_view:
+                    self._show_console()
         else:
             self._off_ticks += 1
             # 非手动唤出:停流约 1.2 秒后自动收起(约 8 轮)
@@ -2479,7 +2497,10 @@ class GuiApp(_MediaPanelHost):
             self.status_var.set("配对:请用手机扫描二维码")
             # 扫不了码才用得上这一行(它只是临时公钥,不是钥匙;见 pair_crypto.py)
             self.secret_var.set("扫不了码就抄这一行: " + qr_text)
-            b64 = make_qr_png_b64(secret)
+            # 2026-11-08 修:这里原来写的是 secret —— 该名字在本作用域不存在,
+            # 首次配对走 GUI 模式会抛 NameError,而 _poll 没有保护,事件轮询会永久停掉。
+            # 二维码画的是 qr_text(一次性公钥),与 BackgroundHost._show_setup 一致。
+            b64 = make_qr_png_b64(qr_text)
             if b64:
                 try:
                     self._qr_photo = tk.PhotoImage(data=b64)
@@ -2551,7 +2572,8 @@ class BackgroundHost(_MediaPanelHost):
         root.after(self._POLL_MS, self._poll)
 
     def _ipc_listener(self):
-        """仅监听 127.0.0.1:9530,收到一行 SHOW 就唤出媒体面板(局域网不可达,无安全风险)。"""
+        """仅监听 127.0.0.1:9530:旧命令 SHOW 唤出媒体面板,其余交给 app_bridge
+        (电脑端 App 的状态读取与动作都走这里;局域网不可达)。"""
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -2568,8 +2590,7 @@ class BackgroundHost(_MediaPanelHost):
             try:
                 conn, _ = s.accept()
                 try:
-                    data = conn.recv(64).decode("utf-8", "replace").strip().upper()
-                    if data == "SHOW":
+                    if _ipc_serve_line(conn):
                         gui_queue.put({"kind": "console_show"})
                 except Exception:
                     pass
@@ -2598,8 +2619,14 @@ class BackgroundHost(_MediaPanelHost):
 
     def _handle(self, evt):
         kind = evt["kind"]
+        # ★ 电脑端 App 在线时,配对码与二维码由 App 显示,这里不再弹 Tk 小窗;
+        #   App 那条路同样要过登录 PIN(见 app_bridge._unlock),安全性质不变。
+        #   App 一关(6 秒内没有命令),下面照旧弹窗。
+        app_view = bool(app_bridge is not None and app_bridge.is_attached())
         if kind == "pairing":
             self._close_windows()
+            if app_view:
+                return
             self._show_code(evt["pin"])
         elif kind == "setup":
             self._close_windows()
@@ -2607,6 +2634,8 @@ class BackgroundHost(_MediaPanelHost):
             # 后台模式绝不能直接弹窗 —— 否则任何人坐到电脑前就能抄走。
             # 先过 master PIN(没设过就先设置),校验通过才显示种子。
             self._pending_qr = evt["qr"]
+            if app_view:
+                return
             self._show_master_gate()
         elif kind == "connected":
             # 连上了:关掉配对码/种子小窗,恢复"无窗口"状态
@@ -3759,6 +3788,44 @@ def get_lan_ip():
         s.close()
 
 
+def _ipc_serve_line(conn):
+    """处理 127.0.0.1:9530 上的一条本地命令。
+
+    返回 True 表示这是旧协议的 SHOW(由调用方按原行为处理);
+    返回 False 表示已交给 app_bridge 并回复(或无需回复)。
+
+    命令与回复都是一行:``<命令>\\n`` → ``<json>\\n``。
+    读超时 5 秒,单条命令上限 8 KB —— App 只发短命令,文件内容不走这条路。
+    """
+    try:
+        conn.settimeout(5.0)
+    except Exception:
+        pass
+    buf = b""
+    try:
+        while len(buf) < 8192 and b"\n" not in buf:
+            chunk = conn.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+    except Exception:
+        pass
+    line = buf.split(b"\n", 1)[0].decode("utf-8", "replace").strip()
+    if not line:
+        return False
+    if line.upper() == "SHOW":
+        return True
+    if app_bridge is None:
+        return False
+    reply = app_bridge.handle_line(line)
+    if reply:
+        try:
+            conn.sendall((reply + "\n").encode("utf-8"))
+        except Exception:
+            pass
+    return False
+
+
 def start_show_ipc(on_show):
     """本进程独占 9527(即唯一实例)后,再独占 127.0.0.1:9530。
 
@@ -3786,8 +3853,7 @@ def _ipc_show_loop(s, on_show):
         try:
             conn, _ = s.accept()
             try:
-                data = conn.recv(64).decode("utf-8", "replace").strip().upper()
-                if data == "SHOW":
+                if _ipc_serve_line(conn):
                     try:
                         on_show()
                     except Exception:

@@ -326,7 +326,7 @@ internal class RoomPanels(
     /**
      * 出去取一次。
      *
-     * ★ **云端兜底关着就不发**（见记忆 `ruoxi-cloud-fallback`：那是总闸，
+     * ★ **云端总闸关着就不发**（见记忆 `ruoxi-cloud-fallback`：那是总闸，
      *   关掉之后一个字节都不出去）。屏上把这件事写出来，只用缓存。
      */
     private fun refreshNews() {
@@ -359,7 +359,7 @@ internal class RoomPanels(
         newsMeta.text = listOfNotNull(
             if (at <= 0L) null else "${NewsFeed.stamp(at)} 更新",
             note,
-            if (!cloud) "云端兜底关着" else null,
+            if (!cloud) "云端总闸关着" else null,
         ).joinToString(" · ")
 
         if (shown.isEmpty()) {
@@ -430,7 +430,7 @@ internal class RoomPanels(
                     wxHead.text = "天气"
                     wxBig.text = "—"
                     wxDesc.text = ""
-                    wxFoot.text = if (!AiAgent.loadConfig(ctx).cloudOn) "云端兜底关着" else "没取到"
+                    wxFoot.text = if (!AiAgent.loadConfig(ctx).cloudOn) "云端总闸关着" else "没取到"
                 }
             }
         }, "room-weather").apply { isDaemon = true }.start()
@@ -443,7 +443,7 @@ internal class RoomPanels(
             wxHead.text = "天气"
             wxBig.text = "—"
             wxDesc.text = ""
-            wxFoot.text = if (!AiAgent.loadConfig(ctx).cloudOn) "云端兜底关着" else "正在取…"
+            wxFoot.text = if (!AiAgent.loadConfig(ctx).cloudOn) "云端总闸关着" else "正在取…"
             return
         }
         wxHead.text = "天气 · " + w.city

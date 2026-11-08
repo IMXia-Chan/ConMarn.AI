@@ -25,12 +25,11 @@
 
 拿记事本做实验(不碰微信:重开微信有开出无登录态新实例的风险)。
 """
-import os
 import subprocess
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, r"C:\Users\27014\phone-touchpad\pc-server")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import ai_tools
 import uia

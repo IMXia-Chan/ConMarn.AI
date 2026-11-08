@@ -13,11 +13,8 @@ rem 症状是「黑框闪一下、什么都没干、日志一个字都没写」,而且每次都一样。
 rem ★ 以后凡是用工具生成 .bat,必须转成 CRLF,不然它从第一行起就是坏的。
 setlocal enabledelayedexpansion
 set PORT=9527
-rem 脚本自己所在的目录 —— 不写死路径,换台机器、换个目录都能跑
-set DIR=%~dp0
-if "%DIR:~-1%"=="\" set DIR=%DIR:~0,-1%
-rem pythonw.exe 从 PATH 里找
-for %%i in (pythonw.exe) do if not "%%~$PATH:i"=="" set PY=%%~$PATH:i
+set DIR=C:\Users\27014\phone-touchpad\pc-server
+set PY=D:\AI\pythonw.exe
 set LOG=%DIR%\restart_log.txt
 
 echo ==== %DATE% %TIME% ==== > "%LOG%"

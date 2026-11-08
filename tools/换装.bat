@@ -1,9 +1,9 @@
 @echo off
+set "PY=D:\AI\pythonw.exe"
 set "SC=%~dp0wardrobe_push.py"
-for %%i in (pythonw.exe) do if not "%%~$PATH:i"=="" set "PY=%%~$PATH:i"
-if not defined PY (
-  echo [wardrobe] pythonw.exe not found in PATH.
-  echo Install Python, or edit this .bat and set PY to your pythonw.exe.
+if not exist "%PY%" (
+  echo [wardrobe] pythonw.exe not found: %PY%
+  echo Edit this .bat and point PY at your python.
   pause
   exit /b 1
 )

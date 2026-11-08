@@ -7,11 +7,10 @@
 点击用**记录器**代替真点 —— 这台机器是用户正在用的桌面,不该被测试乱点。
 记录下来的坐标再去和真值对账,一样能证伪。
 """
-import os
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, r"C:\Users\27014\phone-touchpad\pc-server")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import ai_tools
 

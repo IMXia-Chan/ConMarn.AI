@@ -26,7 +26,6 @@
 
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 
 // ---------------------------------------------------------------------------
 // 一、她要的**全部**名字 —— 这份清单从 her.js 里抄下来的,不是我想的
@@ -181,7 +180,7 @@ function bindsOf(expr, name) {
 function findTarget() {
   const arg = process.argv[2];
   if (arg) return arg;
-  const desk = join(process.env.USERPROFILE || homedir(), 'Desktop');
+  const desk = join(process.env.USERPROFILE || 'C:/Users/27014', 'Desktop');
   if (!existsSync(desk)) return null;
   const hits = readdirSync(desk).filter((f) => f.toLowerCase().endsWith('.vrm'));
   return hits.length ? join(desk, hits[0]) : null;

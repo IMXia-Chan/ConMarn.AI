@@ -28,10 +28,9 @@
 
 点击一律用记录器代替真点:这是用户正在用的桌面,不该被测试乱点。
 """
-import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, r"C:\Users\27014\phone-touchpad\pc-server")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import ai_tools
 import uia

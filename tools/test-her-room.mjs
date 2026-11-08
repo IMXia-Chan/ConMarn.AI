@@ -27,12 +27,7 @@
 //   `this.roomDist` / `this.objRoot` 这些真字段,一个都不是假的。
 // ---------------------------------------------------------------------------
 const notes = [];
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
-// 源码默认就在仓库里(her-src/);换过地方就用 HER_SRC 指过去。
-const HERE = dirname(fileURLToPath(import.meta.url));
-const SRC = process.env.HER_SRC || join(HERE, '..', 'her-src', 'src', 'her.js');
+const SRC = process.env.HER_SRC || 'D:/her-build/web/src/her.js';
 
 globalThis.window = {
   addEventListener() {},

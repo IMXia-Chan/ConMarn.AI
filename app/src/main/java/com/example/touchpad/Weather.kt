@@ -29,7 +29,7 @@ import java.nio.charset.Charset
  * 城市的经纬度会跟天气一起落盘，所以**稳定状态下每小时只发第 3 条**。
  * 换城市（比如回家、出差）不会自己发现 —— 想换就在设置里清掉缓存。
  *
- * ## 和「云端兜底」的关系
+ * ## 和「云端总闸」的关系
  *
  * 这三条都是对外请求，所以和 [NewsFeed] 一样归那道总闸管：关着就一个字节都不发，
  * 只用盘上那份，并把「几点取的」写在屏上。
@@ -183,7 +183,7 @@ internal object Weather {
     private const val GEO_URL = "https://geocoding-api.open-meteo.com/v1/search?count=1&language=zh&format=json&name="
 
     private fun get(app: Context, url: String, charset: String): String? = try {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+        val conn = CloudNet.conn(url, app).apply {
             connectTimeout = TIMEOUT
             readTimeout = TIMEOUT
             requestMethod = "GET"

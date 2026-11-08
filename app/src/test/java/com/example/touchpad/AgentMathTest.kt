@@ -76,7 +76,7 @@ class AgentMathTest {
 
     @Test
     fun `换行、竖线、反斜杠都要能原样读回来`() {
-        val raw = "第一行\n第二行 | 带竖线\nC:\\Demo\\路径 \\n 不是换行"
+        val raw = "第一行\n第二行 | 带竖线\nC:\\Users\\27014\\路径 \\n 不是换行"
         val back = AgentBusModel.parse(AgentBusModel.line(e(1, raw)))
         assertEquals(raw, back?.text)
     }

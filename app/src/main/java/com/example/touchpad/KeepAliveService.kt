@@ -72,22 +72,71 @@ class KeepAliveService : Service() {
 
     /** 按当前声明的录制状态更新前台服务类型。手机端开关摄像头/麦克风时也会调到这里。 */
     fun updateType() {
-        var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        // ★★ 2026-11-08(体检 E3):底座从 `dataSync` 换成 `specialUse`。
+        //
+        //   Android 15+ 给 `dataSync` 型前台服务设了「每 24 小时累计 6 小时」的硬上限,
+        //   到点系统调 `onTimeout()`,几秒内不收手就抛 `RemoteServiceException`。
+        //   连着电脑挂一天是**正常用法**,原来那条路等于「用满 6 小时必断」。
+        //   `specialUse` 没有时间配额 —— 理由和 [HerLifeService] 用的是同一条
+        //   (那边已经在真机上验过能起来)。camera / microphone 仍然按需叠在上面,
+        //   它们的用处不变:系统把服务当「正在录像/录音」,ColorOS 基本不强停。
+        var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
         if (cameraRec) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
         if (micRec) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         try {
             startForeground(NOTIF_ID, buildNotification(), type)
         } catch (e: Exception) {
-            // 例如带 camera/mic 类型而权限状态不满足:降级纯 dataSync,别让服务起不来
-            Log.w(TAG, "带 camera/mic 类型启动失败(${e.message}),降级 dataSync")
+            // 例如带 camera/mic 类型而权限状态不满足:先降级纯 specialUse,别让服务起不来
+            Log.w(TAG, "带 camera/mic 类型启动失败(${e.message}),降级 specialUse")
             try {
                 startForeground(
-                    NOTIF_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    NOTIF_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
                 )
             } catch (e2: Exception) {
-                Log.w(TAG, "dataSync 也失败,前台服务可能未生效", e2)
+                // specialUse 也被拒(Android 17 太新,只能实测)。最后退回老的 dataSync ——
+                // **不是**最优解(有 6 小时上限),但总比「一点前台都没有」强。
+                Log.w(TAG, "specialUse 也失败(${e2.message}),退回 dataSync(仅 6 小时)", e2)
+                try {
+                    startForeground(
+                        NOTIF_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    )
+                } catch (e3: Exception) {
+                    Log.w(TAG, "dataSync 也失败,前台服务可能未生效", e3)
+                }
             }
         }
+    }
+
+    /**
+     * 前台服务被系统判定「超时」了 —— Android 14+ 对 `dataSync` 这类有配额的
+     * 类型会调这里,**几秒内不 `stopForeground()` 就抛 `RemoteServiceException`
+     * 把整个进程崩掉**(症状是「连着连着闪退」,而且不给任何提示)。
+     *
+     * ★★ 2026-11-08(体检 E3):`updateType()` 已经把底座换成 `specialUse`(无配额),
+     *   正常情况下不会走到这儿。但真走到了 —— 比如某台机器不认 specialUse、退回了
+     *   `dataSync`,或者以后叠上了别的配额类型 —— **必须体面收场**:收起前台形态、
+     *   留一条能看懂的记录,而不是崩进程。
+     *
+     * ★ 两个重载都实现:API 34 调单参那个,API 35+ 调带 `fgsType` 的那个。
+     *   不去调 `super`,因为带两个参数的重载在 API 34 的机器上根本不存在(会 NoSuchMethodError)。
+     */
+    override fun onTimeout(startId: Int) {
+        onFgsTimeout("dataSync 配额用完")
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        onFgsTimeout("前台服务类型 $fgsType 超时")
+    }
+
+    /**
+     * 收手。**不立刻 `stopSelf`**:进程还活着的那几秒里,电脑那头是连着还是断了,
+     * 由 [TouchpadClient] 自己那条断线重连去判断;这里只把「前台」这层壳摘掉,
+     * 再把事实写进日志(诊断时能看出「不是网络问题,是系统收了配额」)。
+     */
+    private fun onFgsTimeout(why: String) {
+        Log.w(TAG, "$why —— 收起前台形态(不收起就会被系统判 RemoteServiceException)")
+        try { ModelManager.get(this).trace("保活:$why,系统收回了前台保活,连接可能随时断") } catch (_: Exception) {}
+        try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
     }
 
     private fun buildNotification(): Notification {

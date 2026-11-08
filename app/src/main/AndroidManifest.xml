@@ -140,6 +140,7 @@
          底色 #E05B8E),而 `ic_launcher` 只有一个绿方块 PNG、**连 adaptive 版本都没有**。
          所以这是纯升级,不是取舍。 -->
     <application
+        android:name=".ConMarnApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_conmarn"
         android:roundIcon="@mipmap/ic_conmarn_round"
@@ -261,10 +262,19 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- ★★ 2026-11-08(体检 E3):底座从 dataSync 换成 specialUse。
+             dataSync 在 Android 15+ 有「每 24 小时累计 6 小时」的硬上限,
+             到点系统就收;而「连着电脑挂一天」是正常用法。
+             理由同 HerLifeService(specialUse 无配额),见 KeepAliveService.updateType。
+             dataSync 仍留在声明里 —— 它是 specialUse 被拒时的最后兜底。 -->
         <service
             android:name=".KeepAliveService"
             android:exported="false"
-            android:foregroundServiceType="dataSync|camera|microphone" />
+            android:foregroundServiceType="specialUse|dataSync|camera|microphone">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="手机与电脑之间的实时投屏与输入桥接保活" />
+        </service>
 
         <!-- 「她一直在」的前台服务。**和 KeepAliveService 并存,不动老的** ——
              老的管「电脑连接 + 摄像头/麦克风」,是另一条生命周期。
@@ -278,6 +288,16 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="陪伴型助手常驻:在她不被打开时也保持可被唤醒,以便主动提醒与随时响应" />
         </service>
+
+        <!-- 「悬浮条里跟她说话」的麦克风资格（2026-11-08 体检 A3/E6 补登）。
+             ★ 它原来**完全没被声明**、也没有任何代码启动过 —— 一个死类。
+             它要挡的正是悬浮条那条路上真实存在的坑：悬浮球是 overlay 不是 Activity,
+             屏幕上只有那颗球时系统把本 App 当后台,`AudioRecord` 不报错、只回零。
+             清单不声明它，就算有人去 start 也会被系统拒。理由详见 EarFgService 文件头。 -->
+        <service
+            android:name=".EarFgService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <!-- 「唤醒词在听」的前台服务 —— **麦克风型**。
              ★★ 它存在的唯一理由:这台机上录音权限是「仅在使用中允许」那一档,

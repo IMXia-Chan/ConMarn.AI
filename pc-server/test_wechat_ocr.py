@@ -7,11 +7,10 @@
 
 点击一律走**记录器**,不真点 —— 这是用户正在用的桌面。
 """
-import os
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, r"C:\Users\27014\phone-touchpad\pc-server")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import ai_tools
 import uia
@@ -57,7 +56,12 @@ if not cands:
 else:
     for c in cands[:3]:
         tgt = uia._tidy(c["name"])
-        # 公开源码里没有动作级风险闸,这里不做「先跳过后再说」的处理。
+        # ★ 名字里带危险词(发送/提交/删除…)的先跳过 —— 那一下会被动作级风险闸
+        #   在**找之前**拦下,这一段就证明不了「OCR 接得住」了。跳过的要**说出来**,
+        #   静默少测一个 = 这条基准线悄悄变短。
+        if ai_tools._risky_control("click_ui", {"name": tgt}):
+            print("   (跳过 %r:它的名字命中风险闸,那一下不该由这一段来点)" % tgt)
+            continue
         before = len(clicked)
         t = time.time()
         r = ai_tools.execute({"tool": "click_ui", "args": {"name": tgt, "window": WX}},

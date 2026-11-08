@@ -132,11 +132,72 @@ class TaskAlarmReceiver : android.content.BroadcastReceiver() {
             // Android 12+ 后台起前台服务有限制，少数机型会拦。**别静默吞掉**：
             // 拦掉的样子就是「到点了什么都没发生」，比一条通知都没有更难查。
             mm.trace("[定时] 起不了前台服务：${e.javaClass.simpleName}: ${e.message}")
-            TaskNotice.failedToStart(app, id, e.javaClass.simpleName)
+            onStartRefused(app, id, e.javaClass.simpleName, mm)
         }
+    }
+
+    /**
+     * 前台服务被系统拦下之后，**必须把这条任务的闹钟重新排上**。
+     *
+     * ★★ 2026-11-08（体检 E5）：原来这里只发一条通知就完了。而闹钟**已经被消费掉**，
+     *   重排只发生在 [TaskRunService.settle] 里 —— 服务根本没起来，settle 永远不会跑。
+     *   于是那条任务从此**再也不响**，而屏幕上还写着「每天 08:00」。
+     *   通知里那句「下一次就会正常」也就成了一句假话。
+     *
+     * 现在的做法（两次机会，然后体面收场）：
+     *   1. 前 [RETRY_TIMES] 次：往后挪几分钟重排 —— 精确闹钟本身会给应用一个短暂的
+     *      「可以起前台服务」的窗口，很多拦截是**这一次**运气不好，下一次就过了；
+     *   2. 用完就放弃这一次，按「跑了但没成」记账（[TaskMath.nextAfter] 算下一次），
+     *      发一条结果通知说清「这次没跑」。重复任务照常继续排，一次性任务到此结束。
+     */
+    private fun onStartRefused(app: Context, id: String, why: String, mm: ModelManager) {
+        TaskStore.init(app)
+        val plan = TaskStore.find(id)
+        if (plan == null || !plan.enabled) {
+            TaskNotice.failedToStart(app, id, why)
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (plan.failCount < RETRY_TIMES) {
+            val at = now + RETRY_GAP_MS * (plan.failCount + 1)
+            val retry = plan.copy(nextAt = at, failCount = plan.failCount + 1)
+            TaskStore.save(retry)
+            TaskAlarm.arm(app, retry)
+            mm.trace(
+                "[定时] $id 这次没起来（$why），${(at - now) / 1000} 秒后重试" +
+                    "（第 ${retry.failCount}/$RETRY_TIMES 次）"
+            )
+            // 只在**第一次**就告诉他。重试阶段不反复弹 —— 三条一样的通知只会吵。
+            if (plan.failCount == 0) TaskNotice.failedToStart(app, id, why)
+            return
+        }
+
+        // 放弃这一次：算「跑了但没成」，但**下一次必须照常排上**。
+        val next = TaskMath.nextAfter(plan, now)
+        val after = plan.copy(
+            nextAt = next ?: 0,
+            enabled = plan.enabled && next != null,
+            lastAt = now,
+            lastOk = false,
+            lastText = TaskMath.clip("系统拦下了后台启动（$why），这次没跑。", 400),
+            failCount = 0,
+        )
+        TaskStore.save(after)
+        if (after.enabled) TaskAlarm.arm(app, after)
+        TaskNotice.result(app, after, false, "系统拦下了后台启动（$why）。这次没跑。", after.nextAt)
+        mm.trace(
+            "[定时] $id 重试 $RETRY_TIMES 次都被拦，放弃这一次；" +
+                if (after.enabled) "下一次 ${TaskMath.nextText(after.nextAt, now)}" else "这条任务到此结束"
+        )
     }
 
     companion object {
         const val EXTRA_ID = "task_id"
+
+        /** 起不来时最多重排几次。 */
+        private const val RETRY_TIMES = 2
+
+        /** 两次重试之间隔多久（乘第几次）。 */
+        private const val RETRY_GAP_MS = 3 * 60 * 1000L
     }
 }

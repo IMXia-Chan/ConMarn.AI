@@ -815,7 +815,31 @@ class ConMarnActivity : Activity() {
             // text/plain。这里就三行匹配 + 一个 assets.open,自己写反而看得见。
             override fun shouldInterceptRequest(
                 view: WebView, request: WebResourceRequest
-            ): WebResourceResponse? = serveAsset(request.url)
+            ): WebResourceResponse? {
+                val u = request.url ?: return null
+                // ★★ 2026-11-08(体检 B3)：**她这一页也不许绕过云端总闸。**
+                //
+                //   这里原来对 `appassets` 之外的地址一律回 null，意思是「交给 WebView
+                //   自己去发」—— 而 WebView 的网络栈走的是**它自己**，根本不经过
+                //   [CloudNet]。于是总闸关着的时候，房间里任何一个 `<img src="https://…">`
+                //   (她写的 HTML、天气图、外部模型)照样**一个字节都不少地发出去**。
+                //   同一个洞在 [WorkAppActivity] 那边已经堵过了，这里是漏掉的一处。
+                //
+                //   ★ `CloudNet.allow(host)` 放行本机/局域网，所以「连电脑」那条路不受影响。
+                val scheme = u.scheme?.lowercase()
+                if (scheme == "http" || scheme == "https" ||
+                    scheme == "ws" || scheme == "wss"
+                ) {
+                    if (u.host != HER_HOST && !CloudNet.allow(u.host)) {
+                        return WebResourceResponse(
+                            "text/plain", "utf-8", 403, "Cloud Off",
+                            mapOf("Cache-Control" to "no-store"),
+                            java.io.ByteArrayInputStream(ByteArray(0)),
+                        )
+                    }
+                }
+                return serveAsset(u)
+            }
 
             override fun onPageFinished(view: WebView, url: String) {
                 Log.i(TAG, "她的页面加载完: $url")
@@ -1808,7 +1832,7 @@ class ConMarnActivity : Activity() {
      * 三件事刻意写在这里而不是 `room.js` 里：
      *
      * 1. **天气从哪来**。`room.js` 不该知道 open-meteo、不该读盘、更不该发请求 ——
-     *    它只管画。请求那一路归 [Weather]，它守着「云端兜底」那道总闸。
+     *    它只管画。请求那一路归 [Weather]，它守着「云端总闸」那道总闸。
      * 2. **多久看一次**。`Weather.cached` 每次都读盘，两秒一次读文件不值当，所以卡在
      *    [SCENE_EVERY_MS]；而**天光**一小时才换一档，也够快。
      * 3. **只发变化**。结果按字串逐字比较：一样就不发，`room.js` 也就不会白白重画一张贴图。
@@ -1882,7 +1906,7 @@ class ConMarnActivity : Activity() {
                 TaskStore.init(this)
                 val tasks = DayGreet.taskLines(TaskStore.all(), now, RoomPanelMath.endOfDay(now))
                 // ★ 盘上那份太旧就当场补一次 —— 「要不要带伞」问的是**接下来两小时**，
-                //   拿三个小时前的天气回答等于没回答。★ 但必须过「云端兜底」那道总闸：
+                //   拿三个小时前的天气回答等于没回答。★ 但必须过「云端总闸」那道总闸：
                 //   关着就一个字节都不往外发，宁可说「不知道」。
                 var w = Weather.cached(this)
                 if ((w == null || now - w.at > WEATHER_FRESH_MS) &&
@@ -2680,6 +2704,24 @@ class ConMarnActivity : Activity() {
     private fun usingEmbeddedVoice(): Boolean = enginePref() != ENGINE_SYSTEM
 
     /**
+     * 「她嗓子里还有话」—— **两副嗓子都算**。
+     *
+     * ★★ 2026-11-08(体检):原来两处半双工判据只问了 [SherpaVoice]。系统 TTS 那副
+     *   嗓子在念的时候 `SherpaVoice.isSpeaking()` 恒为 false、`pendingCount()` 恒为 0,
+     *   于是判据回答「她说完了」→ 麦克风被放回去 → 她念的每个字都绕回自己的麦 →
+     *   **自问自答,不报错,日志干净**。这和 [EarSessionMath.herVoiceFinished] 文件头
+     *   里那段是同一个病,只是换了一副嗓子。
+     *
+     * ★ 系统那副没有「还欠几句」的读数,用 [speakingText] 代替:它在 [speakNow] 交给
+     *   **任何一副**嗓子之前立起、在 [onSpokenDone] 和两个 `onError` 里落下 —— 和
+     *   「这一句交割完了」是同一件事。它比 `tts?.isSpeaking` 靠得住:`QUEUE_ADD`
+     *   排进去、还没开播的那一小段里 `isSpeaking` 是 false,而话明明欠着。
+     */
+    private fun herVoiceBusy(): Boolean =
+        SherpaVoice.isSpeaking() || SherpaVoice.pendingCount() > 0 ||
+            speakingText != null || tts?.isSpeaking == true
+
+    /**
      * 换嗓子:内嵌 ⇄ 系统。见 [KEY_ENGINE]。
      *
      * ★ 它**当场说一句**给你听 —— 这个钮存在的全部意义就是「哪个更好听 / 哪个不卡」,
@@ -3289,9 +3331,10 @@ class ConMarnActivity : Activity() {
         //   ★ 判据用 [EarSessionMath.herVoiceFinished] 而不是 [herSounding]:
         //     她在合成下一句的那十几秒里 `herSounding` 是 false,可**队伍里还压着话** ——
         //     只看 `herSounding` 的话,这种时候按下去会「什么都没停」,而你还以为停了。
-        if (!EarSessionMath.herVoiceFinished(SherpaVoice.isSpeaking(), SherpaVoice.pendingCount())) {
+        if (herVoiceBusy()) {
             ModelManager.get(this).trace(
-                "耳: 按住说话 —— 先让她停(在念=${SherpaVoice.isSpeaking()},还欠=${SherpaVoice.pendingCount()} 句)"
+                "耳: 按住说话 —— 先让她停(在念=${SherpaVoice.isSpeaking()},还欠=${SherpaVoice.pendingCount()} 句," +
+                    "系统嗓子=${speakingText != null || tts?.isSpeaking == true})"
             )
             interruptHer()
             // ★ 打断之后要留一拍再开麦:喇叭里还有尾音,立刻开麦会把最后半个字听成新输入
@@ -3395,9 +3438,10 @@ class ConMarnActivity : Activity() {
         //   ★ 被挡下来**不是收工** —— 重新排一次,她说完了这一轮自己会开。
         //     不重排的话麦克风就再也回不来了,而那正是这个项目最怕的那种
         //     「静默失败」:她说完这句,就再也不理他了。
-        if (!EarSessionMath.herVoiceFinished(SherpaVoice.isSpeaking(), SherpaVoice.pendingCount())) {
+        if (herVoiceBusy()) {
             ModelManager.get(this).trace(
-                "耳: 她嗓子里还有话(在念=${SherpaVoice.isSpeaking()},还欠=${SherpaVoice.pendingCount()} 句),这一轮先不开麦"
+                "耳: 她嗓子里还有话(在念=${SherpaVoice.isSpeaking()},还欠=${SherpaVoice.pendingCount()} 句," +
+                    "系统嗓子=${speakingText != null || tts?.isSpeaking == true}),这一轮先不开麦"
             )
             // ★ 重排时**把本次的 `fromHold` 带过去** —— 被打回来的这一下就是「按住说话」的话,
             //   下一次放麦也得按按住说话的语义放(松手算说完)。丢了它的话,
@@ -4346,6 +4390,11 @@ class ConMarnActivity : Activity() {
             //   没有这道兜底,循环就死在这一轮,而症状是「她说完这句就不理我了」。
             //   ★ 注意传的是 ttsOn:嗓子关着的时候一秒都不能等(见 EarSessionMath)。
             armVoiceResume(EarSessionMath.speechWaitMs(willSpeak = ttsOn))
+            // ★★ 2026-11-08(体检 E1)：这一轮里她可能刚定了一条定时任务 ——
+            //   那是「到点自己跑、跑完只发通知」的那条路，没通知权限就等于白跑。
+            //   放在这里是因为**他刚提出这件事**，问一句最自然；没有任务时它就是一次
+            //   两个判断的短路，不打扰任何人。见 [askTaskNotifIfNeeded]。
+            askTaskNotifIfNeeded()
         }
 
         override fun onError(msg: String) = runOnUiThread {
@@ -4494,10 +4543,17 @@ class ConMarnActivity : Activity() {
         root.addView(v, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         gateCover = v
+        // ★ 记一笔。这块黑底**看上去和「房间没画出来」一模一样**(同一个色值 `#160F13`),
+        //   2026-11-08 那次就是这么误诊了半小时 —— 日志里必须有「盖了/撤了」这两行,
+        //   否则下次只能靠数视图树才分得清。
+        showLog("门口锁:盖黑底(等指纹)")
     }
 
     private fun uncoverGate() {
-        gateCover?.let { root.removeView(it) }
+        gateCover?.let {
+            root.removeView(it)
+            showLog("门口锁:撤黑底(验过了)")
+        }
         gateCover = null
     }
 
@@ -4519,6 +4575,15 @@ class ConMarnActivity : Activity() {
                 onPass = { uncoverGate() },
                 onFail = { finish() },
             )
+        } else {
+            // ★★ 2026-11-08：**已经不用问了，那黑底就必须撤。**
+            //
+            //   这块底原来是「只在 onPass 里撤」的。只要有一轮没走到 onPass，
+            //   它就会一直挂在房间上；而它跟房间底色同一个色值，看上去就是
+            //   「她的房间没了」。任何一次回到前台都是一次免费的自愈机会：
+            //   进来说明此刻不需要验，那就不该有东西挡着。
+            //   （重复调用安全 —— 没盖就什么都不做，见 [uncoverGate]。）
+            uncoverGate()
         }
         // ★★ 房间在前台 = **屏幕不睡**。用户 2026-10-04 晚点名要的:
         //   > 「还有就是息屏,能不能**常驻不息屏**如果开在前台就不息屏」
@@ -4572,6 +4637,10 @@ class ConMarnActivity : Activity() {
         roomPanels?.poke()
         // 窗外那片景也立刻对一次表(理由同 [pushSceneWeather] 里 `force` 那段)。
         pushSceneWeather(force = true)
+        // ★★ 2026-11-08(体检 E1)：盘上有开着的定时任务、而通知权限还没给 —— 在这儿要一次。
+        //   任务是他**之前**用对话定下的（那时可能还没有权限），所以这条不能只挂在
+        //   创建那一刻；回房间也是一个自然的时机。见 [askTaskNotifIfNeeded]。
+        askTaskNotifIfNeeded()
         refreshConnDot()
         root.removeCallbacks(connDotTick)
         root.postDelayed(connDotTick, 2000L)
@@ -5027,6 +5096,30 @@ class ConMarnActivity : Activity() {
      */
     private fun canPostNotifications(): Boolean = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
+    /** 这一进程里问过一次就不再烦他 —— 见 [askTaskNotifIfNeeded]。 */
+    private var askedTaskNotif = false
+
+    /**
+     * ★★ 2026-11-08(体检 E1):**定了定时任务,就得先把通知权限要下来。**
+     *
+     * 原来只在一个地方请求过通知权限 ——「让她一直在」那个开关([toggleAlive])。
+     * 可定时任务是另一条路:他在对话里说「每天八点……」,工具把它存下来、闹钟排上,
+     * 然后**到点跑完只发通知**。没权限的时候 `TaskNotice.result` 会静默失败
+     * (通知根本不出现在通知栏),症状是「它到底跑没跑?」—— 结果写在那儿,没人看得见。
+     *
+     * ★ 问的时机:一轮对话结束、或者房间回到前台,并且**盘上确实有开着的任务**。
+     *   没有任务的时候一个问题都不问(不能一进 App 就弹冷脸)。
+     * ★ 只问一次:拒绝了还反复弹,是把人往设置里逼,不是帮忙。
+     */
+    private fun askTaskNotifIfNeeded() {
+        if (askedTaskNotif || canPostNotifications()) return
+        TaskStore.init(this)
+        if (TaskStore.all().none { it.enabled }) return
+        askedTaskNotif = true
+        toast("定时的结果只能靠通知送到你手上 —— 先给一下通知权限")
+        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIF)
+    }
+
     /**
      * 云端兜底的开关。**只拨开关,不碰 key** —— 这正是它和「把 key 删空」的区别:
      * 关掉之后想再开,拨回来就行,不用把那个 key 找回来重填一遍。
@@ -5043,8 +5136,358 @@ class ConMarnActivity : Activity() {
         c.cloudOn = !c.cloudOn
         AiAgent.saveConfig(this, c)
         toast(
-            if (c.cloudOn) "云端备用通道:已开启"
-            else "云端备用通道:已关闭，不再发出任何对外请求。"
+            if (c.cloudOn) "云端总闸:已开启"
+            // ★ 关掉之后**所有**出网都停(见 [CloudNet]),不只是她的模型调用。
+            //   本机和局域网不受影响 —— 这句话必须跟着一起说,否则「关闸」听起来
+            //   像是「连家里那台电脑也不能用了」。
+            else "云端总闸:已关闭，所有对外请求已停（本机与局域网不受影响）"
+        )
+    }
+
+    /**
+     * 「云端总闸」点进去的那一页：**开关和密钥放在同一处**。
+     *
+     * ★ 2026-11-08 他的原话：「能不能在云端总闸那点一下，填 key？」
+     *   原来那一行点一下只翻转开关，填密钥得绕去触控板那页的老弹窗（那边才有一个
+     *   能粘贴的输入框）。可这两件事本来就是一件事 —— 一个管「出不出手机」，
+     *   一个管「以谁的身份出去」。分在两处的结果就是他填完密钥回来，还得再找一次开关。
+     */
+    private fun showCloudPanel() {
+        val box = column()
+        var sw: LinearLayout? = null
+        var key: LinearLayout? = null
+
+        fun refresh() {
+            val c = agent().config
+            sw?.let {
+                setRow(
+                    it, "云端总闸:" + if (c.cloudOn) "已开启" else "已关闭",
+                    if (c.cloudOn) "" else "所有出网已停 · 本机与局域网除外"
+                )
+            }
+            key?.let {
+                val own = c.cloudApiKey.isNotEmpty()
+                val viaApi = c.endpoints.any { e -> RouteMath.viable(e) }
+                setRow(
+                    it,
+                    "云端密钥:" + when {
+                        own -> "已配置"
+                        viaApi -> "由「模型与接口」提供"
+                        else -> "未配置"
+                    },
+                    if (own) "点这里更换或清空" else "点这里填写"
+                )
+            }
+        }
+
+        val r1 = settingRow("云端总闸", "", {})
+        r1.setOnClickListener { toggleCloud(); refresh() }
+        sw = r1
+        box.addView(r1, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        val r2 = settingRow("云端密钥", "", {})
+        r2.setOnClickListener { showCloudKeyDialog { refresh() } }
+        key = r2
+        box.addView(r2, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        box.addView(hint(
+            "总闸管「出不出手机」：关着的时候天气、新闻、网页读取、图片生成、接口调用全部停，" +
+                "本机模型与局域网里的电脑照常使用。\n" +
+                "密钥管「以谁的身份出去」：只存在本机，卸载即丢。它和总闸是两把锁，" +
+                "两个都满足，请求才会发出。\n" +
+                "也可以在「模型与接口」里按用途分别配置；那边配好了，这一格可以留空。"
+        ))
+
+        refresh()
+        pageDialog("云端总闸", box)
+    }
+
+    /**
+     * 填或更换云端密钥。
+     *
+     * ★ 带「粘贴」：key 又长又随机，在手机上纯手打基本打不对 —— 触控板那页的老弹窗
+     *   早就为这件事挂了一颗粘贴键，这边不能反而没有。
+     */
+    private fun showCloudKeyDialog(after: () -> Unit) {
+        val c = agent().config
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(20), dp(12), dp(20), 0)
+        }
+        val input = EditText(this).apply {
+            setSingleLine()
+            setText(c.cloudApiKey)
+            setSelection(text.length)
+            setTextColor(getColor(R.color.glass_text))
+            setHintTextColor(getColor(R.color.glass_dim))
+            hint = "sk-…"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        row.addView(input, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(
+            herButton("粘贴", 13f) {
+                val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                        as android.content.ClipboardManager
+                val s = cm.primaryClip?.takeIf { it.itemCount > 0 }
+                    ?.getItemAt(0)?.coerceToText(this@ConMarnActivity)?.toString()?.trim().orEmpty()
+                if (s.isEmpty()) {
+                    toast("剪贴板里没有文字")
+                } else {
+                    input.setText(s)
+                    input.setSelection(s.length)
+                }
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        )
+
+        // ★ `show()` 必须接在 **Builder** 上（它返回 AlertDialog）；接在 create() 之后
+        //   拿到的是 Unit，那就 `.glassified()` 不上了 —— 这里踩过一次。
+        val d = glassBuilder("云端密钥")
+            .setMessage("只存在本机。填完记得把总闸打开，请求才会出去；留空 = 不用兜底。")
+            .setView(row)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("保存", null)
+            .show()
+            .glassified()
+        // ★ 自己接管「保存」那一颗（所以上面传 null）：默认那颗**先关窗再回调**，
+        //   保存还要写盘，得等写完了再关。
+        d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val v = input.text.toString().trim()
+            // ★ 改内存里那一份（下一句就生效）+ 落盘（不落盘的话关掉 App
+            //   再打开它自己就回来了 —— 和 [toggleCloud] 同一条道理）。
+            c.cloudApiKey = v
+            AiAgent.saveConfig(this@ConMarnActivity, c)
+            d.dismiss()
+            toast(if (v.isEmpty()) "云端密钥:已清空" else "云端密钥:已保存")
+            after()
+        }
+    }
+
+    /**
+     * 前缀快照的预热：**自动挑时间 + 手动立刻算，手动优先**。
+     *
+     * ★ 2026-11-08 他的原话：「设置里加一个前缀快照预热的设置选项，我想手动和自动
+     *   识别环境是否可以加载，手动更优先」。
+     *
+     * 四行，各管一件事：
+     *  - 「当前快照」：现在这份提示词/工具表/模型对应的快照在不在盘上、多少 token、多大；
+     *  - 「自动预热」：开着时开机后由 [HerBoot] 挑凉的时候算（关掉 = 只还原、不冷算，
+     *    见 [AiAgent.warmUpOnce] 里那道闸）；他 2026-11-08 要的「自动识别环境」就是这一行
+     *    下面那行「环境」报的读数；
+     *  - 「环境」：电池温度 + 插没插电 + 自动那一路现在能不能开始；
+     *  - 「现在就算一次」：**跳过温度闸**立刻算 —— [AiAgent.warmUp] 的 manual 那一路。
+     *
+     * ★ 为什么手动不受温度限制：闸的职责是替**自动**那一路挑时间，不是替他做决定。
+     *   代价照实写在小字里 —— 热着算实测约 3 token/秒，可能撞 60 分钟超时。
+     */
+    private fun showPrefillPanel() {
+        val box = column()
+        var statusRow: LinearLayout? = null
+        var autoRow: LinearLayout? = null
+        var envRow: LinearLayout? = null
+        var runRow: LinearLayout? = null
+
+        fun fmtMb(b: Long): String =
+            String.format(java.util.Locale.US, "%.0f MB", b / 1024.0 / 1024.0)
+
+        fun refresh() {
+            val a = agent()
+            val st = a.snapshotStatus()
+            statusRow?.let {
+                setRow(
+                    it,
+                    "当前快照:" + when {
+                        st == null -> "还没有"
+                        st.tokens <= 0 -> "不可用"
+                        else -> "已就绪"
+                    },
+                    when {
+                        st == null -> "生成之前，每次开机都要冷算一遍前缀"
+                        st.tokens <= 0 -> "盘上有文件但记录对不上，下次仍会重算"
+                        else -> "${st.tokens} token · ${fmtMb(st.bytes)} · " +
+                            java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
+                                .format(java.util.Date(st.atMs)) + " 存的"
+                    })
+            }
+            autoRow?.let {
+                setRow(it, "自动预热:" + if (a.config.prefillAuto) "已开启" else "已关闭", "")
+            }
+            envRow?.let {
+                val t = PrefillGate.batteryTempC(this)
+                val ch = PrefillGate.charging(this)
+                val ok = PrefillMath.shouldStart(t, ch)
+                val cap = if (ch) PrefillMath.MAX_TEMP_CHARGING_C else PrefillMath.MAX_TEMP_BATTERY_C
+                val read = when {
+                    t == null -> "读不到电池温度"
+                    else -> String.format(java.util.Locale.US, "%.1f°C", t) +
+                        (if (ch) " · 插着电" else " · 没插电")
+                }
+                setRow(
+                    it,
+                    "环境:" + if (ok) "自动预热可以开始" else "自动预热要等一等",
+                    "$read（自动那一路的门槛 " +
+                        String.format(java.util.Locale.US, "%.1f", cap) + "°C）")
+            }
+            runRow?.let {
+                setRow(
+                    it, "现在就算一次",
+                    if (a.prefillRunning()) "已经在算了，等它跑完" else "跳过温度限制，立刻开始"
+                )
+            }
+        }
+
+        val r1 = settingRow("当前快照", "", {})
+        statusRow = r1
+        box.addView(r1, fullRow())
+
+        val r2 = settingRow("自动预热", "", {})
+        r2.setOnClickListener {
+            val c = agent().config
+            c.prefillAuto = !c.prefillAuto
+            // ★ 必须落盘：开关只在内存里改的话，关掉 App 再打开它自己就回来了。
+            AiAgent.saveConfig(this, c)
+            toast(if (c.prefillAuto) "自动预热:已开启" else "自动预热:已关闭 —— 只还原快照，不再自己冷算")
+            refresh()
+            if (c.prefillAuto) {
+                // ★ 当场试一次自动那一路 —— 不然这个开关要等到下次开机才生效。
+                //   温度不合适它会自己退回「等凉了再算」，不硬算（见 [AiAgent.warmUpOnce]）。
+                Thread {
+                    agent().warmUp(this, manual = false)
+                    runOnUiThread { if (!isFinishing && !isDestroyed) refresh() }
+                }.apply { isDaemon = true; name = "prefill-auto-on" }.start()
+            }
+        }
+        autoRow = r2
+        box.addView(r2, fullRow())
+
+        val r3 = settingRow("环境", "", {})
+        envRow = r3
+        box.addView(r3, fullRow())
+
+        val r4 = settingRow("现在就算一次", "", {})
+        r4.setOnClickListener { confirmManualPrefill { refresh() } }
+        runRow = r4
+        box.addView(r4, fullRow())
+
+        box.addView(hint(
+            "快照是「系统提示 + 工具表」这截前缀算好的缓存，存一份在本机。有它，开机后第一次" +
+                "开口不用再冷算十几分钟。只在本机算，不出网。\n" +
+                "自动：开机后挑手机凉且插着电的时候算（插电不高于 38°C，没插电不高于 34°C）。" +
+                "关掉之后只还原已有快照，不再自己冷算。\n" +
+                "手动：不受温度限制，按了就立刻开始。手机热的时候会慢很多（实测约 3 token/秒），" +
+                "也可能算到超时；超时不会存下半成品，下次还会重算。\n" +
+                "一份快照约 300–400 MB，存在应用自己的目录里，卸载即清。提示词、工具表或模型" +
+                "一变，旧快照自动作废并清掉。"
+        ))
+
+        refresh()
+        pageDialog("前缀快照预热", box)
+    }
+
+    /**
+     * 手动预热的确认与执行。**不阻塞界面**：算多久都在后台线程，完成后再回来报。
+     *
+     * ★ 确认框只写**这一刻要做的决定和代价**，原理都在 [showPrefillPanel] 那段小字里
+     *   （说明文字进设置页，浮层里只放选项本身）。
+     */
+    private fun confirmManualPrefill(after: () -> Unit) {
+        if (agent().prefillRunning()) {
+            toast("已经在算了，等它跑完")
+            return
+        }
+        val d = glassBuilder("现在就算一次")
+            .setMessage(
+                "会跳过温度限制立刻开始，可能持续十几分钟到一小时，期间手机明显发热。" +
+                    "计算期间对话照常可用。"
+            )
+            .setNegativeButton("取消", null)
+            .setPositiveButton("开始", null)
+            .show()
+            .glassified()
+        d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            d.dismiss()
+            toast("已开始：算完会提示，可以离开这一页")
+            Thread {
+                val t0 = System.currentTimeMillis()
+                val why = agent().warmUp(this, manual = true)
+                val cost = (System.currentTimeMillis() - t0) / 1000
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    toast(
+                        if (why == null) "前缀快照:完成（$cost 秒）"
+                        else "前缀快照:没算成（$cost 秒）—— $why"
+                    )
+                    after()
+                }
+            }.apply { isDaemon = true; name = "prefill-manual" }.start()
+        }
+    }
+
+    /**
+     * 重新录入唤醒词：**打字输入 + 念两遍校准**。实现见 [WakeEnroll]。
+     *
+     * ★ 说明为什么这么设计，全写给看这个界面的人：
+     *   唤醒词只收汉字（模型按拼音切）；录的不是「你的声音」，而是**验这个模型
+     *   能不能听到这个词** —— 所以「念两遍」是验货，不是训练。
+     *   两遍都听到才存；一遍都听不到**不存**，盘上还是原来那一份。
+     */
+    private fun showWakeEnroll(after: () -> Unit) {
+        val input = glassInput().apply {
+            setText(WakeEnroll.currentWord(this@ConMarnActivity))
+            setSelection(text.length)
+        }
+        glassBuilder("唤醒词")
+            .setMessage(
+                "输入要喊的词（2–4 个汉字）。\n" +
+                    "下一步会让你念两遍：两遍都能被听到才算录好；" +
+                    "一遍都听不到不会保存，保持原来的唤醒词。"
+            )
+            .setView(input)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("开始校准", null)
+            .create()
+            .apply {
+                setOnShowListener {
+                    getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        val w = input.text.toString().trim()
+                        if (w.isEmpty()) {
+                            toast("唤醒词不能是空的")
+                            return@setOnClickListener
+                        }
+                        dismiss()
+                        startWakeEnroll(w, after)
+                    }
+                }
+            }
+            .show()
+    }
+
+    /** 校准过程：一个不可取消的进度框，每一步都由 [WakeEnroll] 报上来。 */
+    private fun startWakeEnroll(word: String, after: () -> Unit) {
+        val stage = TextView(this).apply {
+            setPadding(dp(20), dp(12), dp(20), dp(12))
+            textSize = 15f
+            text = "准备中…"
+        }
+        val d = AlertDialog.Builder(this)
+            .setTitle("正在校准「$word」")
+            .setView(stage)
+            .setCancelable(false)
+            .create()
+        d.show()
+        WakeEnroll.enroll(
+            this,
+            word,
+            onStage = { s -> if (!isFinishing && d.isShowing) stage.text = s },
+            onDone = { _, msg ->
+                if (!isFinishing && d.isShowing) d.dismiss()
+                toast(msg)
+                after()
+            },
         )
     }
 
@@ -5344,6 +5787,14 @@ class ConMarnActivity : Activity() {
         val pcRow = settingRow("电脑连接", "", { openTouchpad() })
         val ttsRow = settingRow("语音播报", "", { toggleTts() })
         val wakeRow = settingRow("语音唤醒", "", { toggleWake() })
+        // ── 唤醒词（2026-11-08）──
+        //
+        //   他的原话：「唤醒词我得喊她几遍才行，然后我在这里得加一个重新录入唤醒词，
+        //   这样才能给用户输入唤醒词」。
+        //   ★ 唤醒词不是训练出来的（见 [WakeTokenMath] 文件头），录的是**校验**：
+        //     让他打的字在现场被这个模型听到，才存。听不到就不存 —— 一份「配好了却永远不响」
+        //     的配置比没有配置毒得多。
+        val wakeWordRow = settingRow("唤醒词", "", {})
         val greetRow = settingRow("主动问候", "", { toggleGreet() })
 
         // ── 她的性格(2026-10-07)──
@@ -5423,6 +5874,14 @@ class ConMarnActivity : Activity() {
         //   [openPage] 声明出来才写得了(Kotlin 的局部函数不能提前引用后声明的局部变量)。
         val linkRow = settingRow("模型与接口", "") {}
 
+        // ── 前缀快照预热（2026-11-08）──
+        //
+        //   他的原话：「设置里加一个前缀快照预热的设置选项，我想手动和自动识别环境
+        //   是否可以加载，手动更优先」。见 [showPrefillPanel]。
+        //   ★ 副标题**只放状态**（规矩同 [setRow]）：「有没有快照」和「自动开没开」
+        //     各占一半 —— 这两件是他点进去最想确认的。
+        val prefillRow = settingRow("前缀快照预热", "") {}
+
         // ── 工作区（2026-11-06）──
         //   他问「返回了成品，但是就一个界面，不能真正生成在桌面上的应用」——
         //   成品落在沙盒工作区里，而那个目录第三方文件管理器进不去（Android 11+ 不让进
@@ -5453,7 +5912,7 @@ class ConMarnActivity : Activity() {
         //     界面结构照旧往外走,那这个钮就是在说反话。
         //   ★ 点击**故意留空**:它要调的那两个东西(`toggleCloud` 和 `doRefresh`)都在后面
         //     (Kotlin 的局部变量不能提前引用),照 [apiRow] 那个先例,挂到下面那一排里。
-        val cloudRow = settingRow("云端备用通道", "") {}
+        val cloudRow = settingRow("云端总闸", "") {}
 
         // ── 云端只见代号（假名，2026-11-04）──
         //
@@ -5573,6 +6032,10 @@ class ConMarnActivity : Activity() {
             //   装好之后标题显示「开」、副标题还在说没装 —— 自相矛盾，演示时最扎眼。
             setRow(wakeRow, "语音唤醒:" + wakeState(), "")
 
+            // ★ 小字只说一句「点这里改」，怎么改全在点进去那一页里 ——
+            //   说明文字一律进设置页，行上只放状态（同 cloudRow 那条规矩）。
+            setRow(wakeWordRow, "唤醒词:" + WakeEnroll.currentWord(this), "点这里重新录入")
+
             setRow(greetRow, "主动问候:" + if (ProactiveGreeting.isEnabled(this)) "已开启" else "已关闭", "")
 
             val aliveOn = HerLife.isAlive(this)
@@ -5626,6 +6089,15 @@ class ConMarnActivity : Activity() {
                     else -> "$ready 个模型 · ${apis.size} 项接口"
                 })
 
+            // ★ 两个状态各报一半：快照在不在（只读盘，很快）+ 自动开关。
+            //   「没有」不代表坏了 —— 提示词一换名字就换，旧的还躺着但不算数。
+            val snap = agent().snapshotStatus()
+            setRow(
+                prefillRow,
+                "前缀快照预热:" + if (snap != null && snap.tokens > 0) "已就绪" else "还没有",
+                "自动" + if (agent().config.prefillAuto) "已开启" else "已关闭"
+            )
+
             // ★ 两行小字都**只报数**，怎么用写在里面那两页（规矩：解释文字进设置）。
             val made = workFiles().size
             setRow(workRow, "工作区", if (made == 0) "暂无" else "$made 件")
@@ -5652,10 +6124,22 @@ class ConMarnActivity : Activity() {
             setRow(gateRow, "启动身份验证:" + if (gateOn && gateOk) "已开启" else "已关闭",
                 if (!gateOk) "本机不可用" else "")
 
-            val cloudOn = agent().config.cloudOn
-            val cloudHasKey = agent().config.cloudApiKey.isNotEmpty()
-            setRow(cloudRow, "云端备用通道:" + if (cloudOn) "已开启" else "已关闭",
-                if (cloudOn && !cloudHasKey) "未配置密钥" else "")
+            val cf = agent().config
+            val cloudOn = cf.cloudOn
+            // ★ 「配没配」不能只看兜底那一个 key：他也可以在「模型与接口」里按用途配好一家。
+            //   只看 cloudApiKey 的话，明明能出网，这一行却写着「未配置密钥」——
+            //   他照着这句话去填，填完发现没变，会以为开关是坏的。
+            //   ★ 判据和 [AiAgent] 里那几处**用同一条**：任一家可用就算配过。
+            val cloudHasKey = cf.cloudApiKey.isNotEmpty() || cf.endpoints.any { RouteMath.viable(it) }
+            // ★ 小字是这一行的**全部说明**(浮层里只放选项本身,见「说明文字一律进设置」)。
+            //   关着时必须说清代价与边界:天气/热点/网页搜索/图片生成/接口调用**全部**停,
+            //   而本机那个脑子和他家电脑照常能用 —— 前者是他要的,后者是他会担心的。
+            setRow(cloudRow, "云端总闸:" + if (cloudOn) "已开启" else "已关闭",
+                when {
+                    !cloudOn -> "所有出网已停 · 本机与局域网除外"
+                    !cloudHasKey -> "点进去填密钥"
+                    else -> ""
+                })
             // ★★ 这一行只说**出不出手机**这件事,一个字都不提实现。
             //   「同一个号码同一个代号」是它能工作的原因,也得让他知道 —— 那是代价所在:
             //   云端虽然拿不回值,但看得出「这是同一个」。
@@ -5690,10 +6174,10 @@ class ConMarnActivity : Activity() {
             items.addAll(live)
         }
         section("连接", pcRow)
-        section("语音与回应", ttsRow, wakeRow, greetRow, bargeRow, quietRow, quietTimeRow)
+        section("语音与回应", ttsRow, wakeRow, wakeWordRow, greetRow, bargeRow, quietRow, quietTimeRow)
         section("房间", panelRow)
         section("角色", herRow, memRow, aliveRow, idleRow)
-        section("能力", linkRow, skillRow, workRow, rememberRow, sharedRow)
+        section("能力", linkRow, prefillRow, skillRow, workRow, rememberRow, sharedRow)
         section("安全与隐私", cloudRow, aliasRow, gateRow, auditRow, notifRow)
         section("关于", usageRow, aboutRow)
         // 行里的点击要能在切完之后刷新,所以把 refresh 挂到一个可变的引用上
@@ -5716,6 +6200,7 @@ class ConMarnActivity : Activity() {
         // ★ 「她的嗓子」那一行的点击 2026-10-08 跟着收起来了(见上面声明那段)。
         //   原来是:`engineRow.setOnClickListener { toggleVoiceEngine(); doRefresh() }`
         wakeRow.setOnClickListener { toggleWake(); doRefresh() }
+        wakeWordRow.setOnClickListener { showWakeEnroll { doRefresh() } }
         greetRow.setOnClickListener { toggleGreet(); doRefresh() }
         aliveRow.setOnClickListener { toggleAlive(); doRefresh() }
         // ★ 拨到「开」才弹那一页 —— 所以得先问它拨完是什么状态(见 [toggleQuiet] 的返回值)。
@@ -5726,13 +6211,16 @@ class ConMarnActivity : Activity() {
         panelRow.setOnClickListener { toggleRoomPanels(); doRefresh() }
         quietTimeRow.setOnClickListener { openPage { showQuietIntro() } }
         linkRow.setOnClickListener { openPage { showLinks() } }
+        prefillRow.setOnClickListener { openPage { showPrefillPanel() } }
         workRow.setOnClickListener { openPage { showWorkArea() } }
         rememberRow.setOnClickListener { openPage { showRemember() } }
         sharedRow.setOnClickListener { openPage { showAgentMemory() } }
         skillRow.setOnClickListener { openPage { showSkills() } }
         aboutRow.setOnClickListener { openPage { showAbout() } }
         usageRow.setOnClickListener { openPage { showUsage() } }
-        cloudRow.setOnClickListener { toggleCloud(); doRefresh() }
+        // ★ 点它不再是「直接翻转」。开关和密钥都收进那一页（见 [showCloudPanel]）——
+        //   他 2026-11-08 要的就是「在云端总闸那点一下，填 key」。
+        cloudRow.setOnClickListener { openPage { showCloudPanel() } }
         aliasRow.setOnClickListener { toggleAlias(); doRefresh() }
         gateRow.setOnClickListener { toggleGate(); doRefresh() }
         auditRow.setOnClickListener { openPage { showAudit() } }
@@ -6516,7 +7004,7 @@ class ConMarnActivity : Activity() {
             val ready = mine.filter { RouteMath.viable(it) }
             val now = RouteMath.pick(eps, key)
             val sub = when {
-                mine.isEmpty() -> "未配置，调用时使用「云端兜底」那一项"
+                mine.isEmpty() -> "未配置，调用时使用「云端总闸」那一项"
                 ready.isEmpty() -> "${mine.size} 个未填写完整，无法使用"
                 else -> "${now?.label}（${now?.model}）· 共 ${ready.size} 个可用"
             }
@@ -9557,9 +10045,21 @@ class ConMarnActivity : Activity() {
             //     那一项(见 `settingRow("电脑", …)`)照旧在,悬浮窗那条路也照旧。
             //
             //   ★ 他说的「先」是字面意思:想让她屋里重新长出那台电脑,**删掉这一行就行**,
-            //     别的地方一个字都不用动。`HandMath.isFixture` 里那句「电脑 **摆**」
-            //     仍然是对的 —— 是这一行在临时压着它,不是它过时了。
+            //     别的地方一个字都不用动。`HandMath.isFixture` 把电脑算作实物仍然是对的
+            //     —— 是这一行在临时压着它,不是那个判据过时了。
             if (h.kind == HandMath.KIND_PC) continue
+
+            // ★★ 2026-11-08:手机自己**也不摆进房间**了(他拍板)。
+            //   他原话:「房间有一个("那是我自己,不用点她")的很早之前的问题」。
+            //   那块竖板点了只会说一句「那是我自己…不用点它」—— 是死胡同,
+            //   而屋里每一件东西都该是**能点的**(见 [HandMath.isFixture] 的判据)。
+            //
+            //   ★ 她**照样能**操作这部手机:[SelfHand] 那只手仍在注册表和工具清单里,
+            //     这一行只挡「摆在屋里」,不挡「她会做什么」。也**不是**软锁:
+            //     进各页面的门都在右上角 ⚙ 里,和电脑那条一样。
+            //   ★ 判据写在**这里**而不是改 [HandMath.isFixture]:isFixture 还管着
+            //     中转站「她的手」那一列(那边要列出手机自己),两者的答案不一样。
+            if (h.kind == HandMath.KIND_SELF) continue
 
             list.put(JSONObject().apply {
                 put("id", h.id)
@@ -9598,6 +10098,9 @@ class ConMarnActivity : Activity() {
 
             HandMath.KIND_SELF ->
                 // 手机自己就在她手里 —— 没有「另一页」可去,她做的事本来就是这里的事。
+                // ★ 2026-11-08 起这条在真机上**走不到**:pushRoomObjects 已经不再把
+                //   self 摆进屋里(见那里的注释)。留着是防御 —— 万一以后又有东西
+                //   把 self 推过来,回一句总比静默强。
                 say("那是我自己。手机上能做的事,你直接说就行 —— 不用点它。")
 
             else ->
@@ -9739,7 +10242,7 @@ class ConMarnActivity : Activity() {
             "左侧显示当日热点，每一页一条。新闻取自十一个来源：百度、微博、知乎、抖音、腾讯新闻、IT之家、36氪、量子位、少数派九个公开榜单，以及新华网与人民网的当日要闻（后两者取自官网首页，排序时优先）。合并后去重。上下划动阅读全文，左右划动换下一条，点开一条会用系统浏览器打开那家媒体的原网页。每小时整批更换一次。",
             "热点按你的偏好排序：你点开过的条目会让同类标题往前排。这份偏好只在这台手机上计算和保存，不发往任何外部服务，也不会随对话发出。点开过的条目本身不保留原文，只保留无法还原的记号。",
             "右侧分为上下两块。上方是今日天气，按网络出口所在城市获取，城市与坐标保存在本机；下方显示今天还要执行的定时任务，没有任务时改为显示中英文语录。语录取自一言、今日诗词、dummyjson 与 stoic-quotes 四个公开来源，文字自动缩放到方框内，不滚动。",
-            "「云端兜底」关闭时，热点与天气都不会对外取用，屏上只显示此前保存过的内容。定时任务与语录不受影响，全部在本机完成。",
+            "「云端总闸」关闭时，热点与天气都不会对外取用，屏上只显示此前保存过的内容。定时任务与语录不受影响，全部在本机完成。",
         )
 
         group(
@@ -9752,15 +10255,15 @@ class ConMarnActivity : Activity() {
         group(
             "能力",
             "「API 控制中心」按用途组织外部服务。一条用途代表她的一类查询能力，其下可以配置多家服务商，同一时刻只有一家生效。未配置的用途不会发出任何请求。",
-            "「模型清单」按文字、写代码、看图三类分别配置模型，未配置的类别回落到「云端兜底」。看图一类只处理派发出去的任务，操作屏幕时使用的识别始终在本机完成，截图不会按这一类发出。",
+            "「模型清单」按文字、写代码、看图三类分别配置模型，未配置的类别回落到「云端总闸」。看图一类只处理派发出去的任务，操作屏幕时使用的识别始终在本机完成，截图不会按这一类发出。",
             "「技能」是她可以复用的做法，可以由对话生成，也可以在工作台完成后保存，或在此页手写。触发词用于在对话中自动想起该技能；手写的技能每次执行前都会先征求同意。",
             "「工作区」存放她在「代码」一档中产出的文件。网页文件可以全屏打开，也可以放置到桌面，使用时与其他应用一致。",
-            "「她记得的事」是本地保留的对话记忆，按字面相近程度召回。开启「云端兜底」时，被召回的内容会随当轮请求一并发出，可以在此逐条删除。",
+            "「她记得的事」是本地保留的对话记忆，按字面相近程度召回。开启「云端总闸」时，被召回的内容会随当轮请求一并发出，可以在此逐条删除。",
         )
 
         group(
             "安全",
-            "「云端兜底」在本机答不上来时改用云端模型。关闭它等于总闸：联网查询与电脑端操作一并停用。",
+            "「云端总闸」在本机答不上来时改用云端模型。关闭它等于总闸：联网查询与电脑端操作一并停用。",
             "「云端只见代号」开启后，发给云端的请求中，人名、地名等已登记的敏感词替换为代号。对照表只保存在本机，不随请求发出。",
             "「开 App 要指纹」开启后，进入应用需要指纹验证；涉及支付与身份的操作会再次验证。本机不支持时会显示为不可用。",
             "「通知权限」用于她在后台运行时播报消息。系统未授权时，需要在此重新申请。",
@@ -9928,14 +10431,17 @@ class ConMarnActivity : Activity() {
             //    (那一次被系统挡掉了)。不补发的话:权限给了、AppSettings 也变成 DEFAULT 了,
             //    **通知栏里照样什么都没有**,而「让她睡」就挂在它上面。
             //    2026-10-04 真机就是这个状态:numEnqueuedByApp=8 / numPostedByApp=0。
+            // ★★ 2026-11-08(体检 E1)：这条现在有**两个**入口 ——「让她一直在」
+            //   和「定了定时任务」。文案得同时说清楚两件事，否则从任务那边进来的
+            //   人会以为刚才那句话答非所问。
             if (ok) HerLifeService.repostNotification()
             ModelManager.get(this).trace(
-                if (ok) "通知权限:给了 —— 常驻通知和「让她睡」现在能用"
-                else "通知权限:拒了 —— 她照常跑,但通知栏里不会有那条,「让她睡」只留在房间的 ⚙ 里"
+                if (ok) "通知权限:给了 —— 常驻通知、「让她睡」、定时任务的结果现在都能送到"
+                else "通知权限:拒了 —— 她照常跑,但通知栏里不会有常驻那条,定时任务的结果也送不到"
             )
             toast(
-                if (ok) "好。通知栏那条现在有了,上面有「让她睡」。"
-                else "没给通知权限。我还在跑,但通知栏里不会有那条 —— 想改去 设置→通知→ConMarn。"
+                if (ok) "好。通知栏现在能用了 ——「让她睡」和定时任务的结果都走那儿。"
+                else "没给通知权限。她还在跑,但定时任务的结果送不到、通知栏里也不会有「让她睡」。想改去 设置→通知→ConMarn。"
             )
             return
         }

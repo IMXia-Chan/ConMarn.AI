@@ -102,12 +102,13 @@ class WorkbenchActivity : Activity() {
     private val jobs = ArrayList<WorkJob>()
 
     /**
-     * 每一件活的**停止令牌**。
+     * 每一件活的**停止令牌** —— 见 companion 里的 [cancels]。
      *
-     * ★ 一件一个：按「停止」只停这一件。全局那一枚（[AiAgent] 的 `cancelFlag`）
-     *   在这儿不能用 —— 那会把另外两件一起掐掉。
+     * ★★ 2026-11-08（体检 D1）：它原来是**这个 Activity 的**实例字段。Activity 一重建
+     *   （转屏、被系统回收、从任务卡回来），表就是空的，而活还在跑 ——
+     *   那时按「停止」只会把档案改成「已停止」，**模型那边一行都没停**，
+     *   几秒后它跑完又把状态写回「完成」。挪到进程级之后，令牌和活同寿命。
      */
-    private val cancels = HashMap<String, AtomicBoolean>()
 
     /**
      * 这一轮带的附件。
@@ -1058,7 +1059,12 @@ class WorkbenchActivity : Activity() {
 
         // ★ 正在跑的那件不接受「接着说」：那一轮的成品还没写回会话，
         //   现在把话塞进去，两轮的上下文会互相踩，而且后者会被前者覆盖。
-        if (cur != null && cur.status == WorkJobMath.ST_RUNNING) {
+        //
+        // ★★ 2026-11-08（体检 D1）：**档案状态不是唯一判据。**
+        //   活跑在进程里，档案是它跑完才写的；两者之间只要错开一次（上一次没收尾、
+        //   界面上被手动改过），只看 `status` 就会放第二轮进来 —— 同一件活两个线程写账。
+        //   令牌表才是「此刻真的有没有人在跑」。判据取两者之或。
+        if (cur != null && (cur.status == WorkJobMath.ST_RUNNING || cancels.containsKey(cur.id))) {
             toast("该任务正在执行，完成后可继续追加指令。")
             return null
         }
@@ -1253,9 +1259,20 @@ class WorkbenchActivity : Activity() {
         // ★ 2026-11-06：跑一条命令也**是一件活**，和派活一样挂到任务条上。
         //   不这么做的话它就是一个没有代号的孤儿：切到别的活再切回来，它就不见了，
         //   而账其实还在盘上 —— 看得见和存得下成了两回事。
+        //
+        // ★★ 2026-11-08（体检 D3）：补上它缺的两样 —— **并发闸**和**停止令牌**。
+        //   原来这条路上：开几件都不挡（一条命令可以跑满 CODE_TIMEOUT_SEC），
+        //   「停止」按下去只会把档案改成「已停止」而命令还在跑，跑完又用旧快照
+        //   把状态写回「完成」—— 三步都是假的。
+        if (liveJobs.size >= WorkJobMath.MAX_ACTIVE) {
+            toast("同时最多 ${WorkJobMath.MAX_ACTIVE} 件，等一件跑完再来。")
+            return
+        }
         val job = openJob(cmd) ?: return
-        WorkJobStore.save(job.copy(status = WorkJobMath.ST_RUNNING, updatedAt = System.currentTimeMillis()))
+        val tok = AtomicBoolean(false)
+        cancels[job.id] = tok
         liveJobs.add(job.id)
+        WorkJobStore.save(job.copy(status = WorkJobMath.ST_RUNNING, updatedAt = System.currentTimeMillis()))
         refreshJobs()
         taskInput.setText("")
         status.visibility = View.VISIBLE
@@ -1282,22 +1299,36 @@ class WorkbenchActivity : Activity() {
                 body, ask.id,
             )
             StepStore.save(back.id, "沙盒 · 输出", body)
-            if (WorkJobStore.find(job.id) != null) {
+            // ★★ 2026-11-08（体检 D3）：**先重读、再看令牌**，不能用开跑前那份快照。
+            //   · 重读：他中途归档/删掉了这件活，写回旧快照会把它**复活**；
+            //   · 令牌：他中途按了「停止」，命令可能还跑到了底 —— 那种情况下
+            //     状态必须是「已停止」，不能翻回「完成」，成品也不该再写进会话。
+            val cur = WorkJobStore.find(job.id)
+            if (cur != null) {
+                val stopped = tok.get()
                 WorkJobStore.save(
-                    job.copy(
-                        status = if (ok) WorkJobMath.ST_DONE else WorkJobMath.ST_FAILED,
+                    cur.copy(
+                        status = when {
+                            stopped -> WorkJobMath.ST_STOPPED
+                            ok -> WorkJobMath.ST_DONE
+                            else -> WorkJobMath.ST_FAILED
+                        },
                         updatedAt = System.currentTimeMillis(),
                         // 会话里也留一条成品：下一句「接着说」才有上下文。
-                        turns = WorkJobMath.appendTurn(job.turns, WorkTurn.ASSISTANT, body),
+                        turns = if (stopped) cur.turns
+                        else WorkJobMath.appendTurn(cur.turns, WorkTurn.ASSISTANT, body),
                     )
                 )
             }
 
             liveJobs.remove(job.id)
             runOnUiThread {
+                // ★ 令牌跟着活一起摘（同 [run]）：留着的话下一次「停止」会按到一个
+                //   已经没人看的令牌上，看起来像按了没反应。
+                cancels.remove(job.id)
                 refreshJobs()
-                status.text = head
-                status.visibility = if (head.isBlank()) View.GONE else View.VISIBLE
+                status.text = if (tok.get()) "已停止" else head
+                status.visibility = if (status.text.isBlank()) View.GONE else View.VISIBLE
             }
         }.start()
     }
@@ -1431,6 +1462,12 @@ class WorkbenchActivity : Activity() {
      *   不绑的话，一段上千字的成品会在他已经看完之后再念几分钟，而他没有任何按钮能止住。
      */
     private fun dialog(title: String, body: String) {
+        // ★★ 2026-11-08:人已经退出去了就别再弹。
+        //   活是普通 Thread,Activity 销毁了照跑;跑完 `runOnUiThread` 仍会在主线程执行,
+        //   而 `Dialog.show()` 拿一个已经失效的 window token 会抛 BadTokenException ——
+        //   症状正是「跑着一段活,顺手退出去看别的,过一会儿自己崩了」。
+        //   ★ 类里的 `copyIn`(:600)早就有这层保护,这里当时漏了。
+        if (isFinishing || isDestroyed) return
         val tv = TextView(this).apply {
             text = body
             textSize = 12.5f
@@ -1686,10 +1723,22 @@ class WorkbenchActivity : Activity() {
         /**
          * 这个**进程**里正在跑的活。
          *
-         * ★ 判据必须挂在进程上，不能挂在这一个 Activity 上：[cancels] 每次重建都是空的，
+         * ★ 判据必须挂在进程上，不能挂在这一个 Activity 上：实例字段每次重建都是空的，
          *   拿它当「有没有在跑」的判据，会把真的在跑的活误判成「上次没跑完」。
          */
         val liveJobs: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet<String>())
+
+        /**
+         * 每一件活的**停止令牌**（一件一枚）。
+         *
+         * ★ 一件一个：按「停止」只停这一件。全局那一枚（[AiAgent] 的 `cancelFlag`）
+         *   在这儿不能用 —— 那会把另外几件一起掐掉。
+         *
+         * ★★ 2026-11-08（体检 D1）：从 Activity 的实例字段搬到这儿。
+         *   理由和 [liveJobs] 完全一样，而且更狠：令牌一丢，「停止」就只剩把档案
+         *   改成「已停止」这一半 —— 活还在飞，跑完还会把状态覆盖回去。
+         */
+        val cancels = java.util.concurrent.ConcurrentHashMap<String, AtomicBoolean>()
 
         /**
          * 左栏（场 + 读数）占屏宽多少 —— **必须和 `assets/dash/dash.css` 里的

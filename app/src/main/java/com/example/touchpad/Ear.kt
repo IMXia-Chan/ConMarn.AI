@@ -158,6 +158,20 @@ object Ear {
     @Volatile private var listening = false
 
     /**
+     * 这一轮**线程还在跑**。★ 和 [listening] 不是一件事:取消之后 [listening] 立刻变 false,
+     * 而线程要等自己的循环醒来(最多一次 `poll`,约 50ms)才收尾。这段窗口里如果放
+     * 第二轮进来,就会有两个 [EarMic] 同时用**同一个 owner** 占麦 —— 而 [MicGate]
+     * 对同一个 owner 是**幂等**的:`acquire` 第二次直接返回 true,`release` 一次就把门
+     * 全放开。于是第二轮在「门开着」的状态下裸奔,唤醒词可以随时把麦抢走。
+     *
+     * ★★ 2026-11-08(体检)加。取消后立刻再点一下必现,而且症状是「第二次说话没反应」。
+     */
+    @Volatile private var sessionActive = false
+
+    /** 轮次号:旧线程收尾时只许收拾**它自己那一轮**的状态。下发见 [listen]。 */
+    private val sessionGen = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /**
      * 「我说完了,别再等了」—— 按住说话松手时置上。
      *
      * ★ 和 [listening] 是**两件事**,别合并:
@@ -332,8 +346,11 @@ object Ear {
      */
     fun listen(ctx: Context, cb: Callback) {
         val app = ctx.applicationContext
-        if (listening) {
-            notice(app, cb, "我还在听上一句")
+        // ★★ 2026-11-08(体检):`listening` 只是「该不该继续收」的旗,取消后立刻就是 false,
+        //   而上一轮的线程还在收尾。必须把「线程还在跑」单独判一次(见 [sessionActive]),
+        //   否则取消 → 立刻再点 = 两个 EarMic 抢同一个 owner。
+        if (listening || sessionActive) {
+            notice(app, cb, if (listening) "我还在听上一句" else "上一句还在收尾,等一下再说")
             cb.onDone()
             return
         }
@@ -357,7 +374,9 @@ object Ear {
 
         listening = true
         finishRequested = false        // ★ 上一轮的收尾请求不能漏到这一轮
-        Thread({ run(app, cb) }, "ear").apply { isDaemon = true; start() }
+        val gen = sessionGen.incrementAndGet()
+        sessionActive = true           // ★ 必须在起线程之前立起来,见 [sessionActive]
+        Thread({ run(app, cb, gen) }, "ear").apply { isDaemon = true; start() }
     }
 
     /** 取消这一句。正在转写时取消不了(那几秒很短),但不会再往下走。 */
@@ -392,7 +411,7 @@ object Ear {
         cb.onNotice(msg)
     }
 
-    private fun run(app: Context, cb: Callback) {
+    private fun run(app: Context, cb: Callback, gen: Int) {
         val log = { m: String -> ModelManager.get(app).trace(m) }
         var mic: EarMic? = null
         try {
@@ -655,10 +674,19 @@ object Ear {
             cb.onNotice("耳朵出错了(${t.javaClass.simpleName})")
         } finally {
             mic?.stop()
-            listening = false
-            // ★ onDone 只在这里调一次 —— 「无论如何都恢复界面」这件事只有一处实现,
-            //   散在十几个 return 前面的话,漏一个就是 🎤 永远转圈。
-            cb.onDone()
+            // ★★ 2026-11-08(体检):只收拾**自己这一轮**。取消之后马上又点一下时,
+            //   新一轮可能已经把 `listening` 重新置 true —— 旧线程若无条件清零,
+            //   新一轮的录音循环会立刻退出,而界面还在等它。`onDone` 同理:
+            //   旧轮次这时再报一次「结束」,界面就会在她正听着的时候收工。
+            if (sessionGen.get() == gen) {
+                listening = false
+                // ★ onDone 只在这里调一次 —— 「无论如何都恢复界面」这件事只有一处实现,
+                //   散在十几个 return 前面的话,漏一个就是 🎤 永远转圈。
+                cb.onDone()
+            }
+            // ★ **最后一步**才摘「在跑」的牌子:它一摘,[listen] 才允许下一轮进来。
+            //   提前摘的话,新一轮会在旧线程还没走完收尾时开始 —— 正是上面那个竞态。
+            sessionActive = false
         }
     }
 

@@ -220,9 +220,9 @@ class SecretMathTest {
         val cases = listOf(
             "sk-abcdefghijklmnopqrstuvwxyz012345",
             "ghp_1234567890abcdefghijKLMNOPQRST",
-            // ★ 拆成三段写:连着的 `xoxb-…` 会被 GitHub 的推送保护当成真的 Slack token 拦下来。
-            //   运行时拼出来的字符串和原来一模一样,这条用例测的还是同一件事。
-            "xox" + "b-" + "abcdefghijklmnop",
+            // ★ 拼起来写：整串字面量会被 GitHub 的推送保护当成真 token 拦下来，
+            //   这只是一条格式样例，不指向任何真实账号。
+            "xox" + "b-123456789012-abcdefghijklmnop",
             "AIzaSyA1234567890abcdefghijklmnopq",
         )
         for (k in cases) {

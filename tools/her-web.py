@@ -34,12 +34,12 @@
 用法:
     python tools/her-web.py                 # 用 assets 里那份 sample.vrm
     python tools/her-web.py --open          # 顺手用 Edge 的 --app 模式打开(无地址栏)
-    python tools/her-web.py --vrm path/to/x.vrm  # 指定一具身体
+    python tools/her-web.py --vrm D:\\x.vrm  # 指定一具身体
     python tools/her-web.py --port 8091
 
 ★ 不给 --vrm 时按这个顺序找身体(第一个存在的就用):
-    ① 桌面上的 .vrm(刚导出的通常就在那儿)
-    ② 仓库根 vrm/ 目录里最新那个
+    ① 桌面上的 .vrm(★ 他刚导出的就在那儿)
+    ② D:\\her-build\\vrm\\ 里最新那个
     ③ assets 里那份 sample.vrm
   并在启动横幅里**报出它到底用了哪个、多少字节** —— 换身体最容易出的错
   就是「我换了它没变」,而那种失败一个字都不会报。
@@ -233,9 +233,9 @@ def pick_vrm(explicit, root):
     desktop = newest_vrm(os.path.join(os.path.expanduser("~"), "Desktop"))
     if desktop:
         return desktop, "桌面上的(最新那个)"
-    built = newest_vrm(os.path.join(REPO, "vrm"))
+    built = newest_vrm("D:/her-build/vrm")
     if built:
-        return built, "仓库 vrm/ 里(最新那个)"
+        return built, "D:\\her-build\\vrm(最新那个)"
     fallback = os.path.join(root, "sample.vrm")
     if os.path.isfile(fallback):
         return fallback, "assets 里内置那份"

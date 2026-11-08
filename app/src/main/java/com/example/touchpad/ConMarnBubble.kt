@@ -180,6 +180,16 @@ object ConMarnBubble {
     /** 按下之前对话是不是本来就开着 —— 「点一下打断」要据此判断该不该留在这场对话里。 */
     private var sessionBeforePress = false
 
+    /**
+     * 手指**落下那一刻**她是不是正在念。
+     *
+     * ★★ 2026-11-08（体检 A2）：半双工闸在按下时就把她停了（见 [startEarTurn]），
+     *   于是到松手时 `HerVoice.isSpeaking()` 已经是 false —— 如果那一下是「点」，
+     *   松手那一支会把它判成「她本来就没在说话 → 我要打字」，**弹出键盘**。
+     *   而他刚才那一下的意思明明是「别说了」。所以状态得在按下时记下来。
+     */
+    private var spokeAtPress = false
+
     /** 这一轮开麦是不是**他手指按着**开的。它只影响「没听到东西之后」怎么收。 */
     private var turnFromHold = false
 
@@ -988,6 +998,9 @@ object ConMarnBubble {
                 swipeCancelled = false
                 // 记下「按之前是不是就在聊」——「点一下」要不要留在这场对话里,靠它判。
                 sessionBeforePress = voiceOn
+                // ★ 同时记下「按下去那一刻她是不是在念」。半双工闸会在下面那一次
+                //   [startEarTurn] 里当场把她停掉，所以到松手时已经问不出来了。
+                spokeAtPress = HerVoice.isSpeaking()
                 if (!voiceOn) {
                     voiceOn = true
                     silenceSince = System.currentTimeMillis()
@@ -1044,7 +1057,12 @@ object ConMarnBubble {
                     BarGestureMath.Release.TAP -> {
                         roundCancelled = true       // 这一轮不算「没人说话」,见它的注释
                         if (Ear.isListening) Ear.cancel()
-                        if (HerVoice.isSpeaking()) {
+                        // ★★ 2026-11-08（体检 A2）：`spokeAtPress` 也要算进来 ——
+                        //   半双工闸在按下那一刻已经把她停了，这里的 `isSpeaking`
+                        //   到松手时是 false，只认它就会把「别说了」判成「我要打字」。
+                        val wasSpeaking = HerVoice.isSpeaking() || spokeAtPress
+                        spokeAtPress = false
+                        if (wasSpeaking) {
                             // 她在说 → 这一下是「别说了」。
                             HerVoice.stop()
                             setListeningUI(false)
@@ -1393,6 +1411,9 @@ object ConMarnBubble {
         swipeCancelled = false
         if (Ear.isListening) Ear.cancel()
         HerVoice.stop()
+        // ★★ 2026-11-08(体检 A3/E6)：对话收工 = 撤掉那块「语音对话进行中」的牌子。
+        //   不撤的话它会一直挂着，而麦克风其实早就不听了 —— 和唤醒那条一样的谎。
+        EarFgService.stop(app)
         setListeningUI(false)
         setCancelGlow(app, false)
         restSlot()
@@ -1412,6 +1433,22 @@ object ConMarnBubble {
     private fun startEarTurn(fromHold: Boolean) {
         val app = appCtx ?: return
         if (!voiceOn || Ear.isListening) return
+        // ★★ 2026-11-08(体检 A2):**半双工闸 —— 她还在念的时候绝不开麦。**
+        //
+        //   这条线上原来没有这道闸:按住胶囊时她若正在说话,`Ear.listen()` 会当场
+        //   把扬声器出来的声音录回麦克风 —— 那一段会被当成「他说的」送去识别,
+        //   于是她**自问自答**,日志干净、一次报错都没有。
+        //   (房间那条路一直有这道闸,见 `ConMarnActivity.herVoiceBusy`;这一条是补上的。)
+        //
+        //   做法和房间完全一样:**先让她停**,留一拍 [EarSessionMath.COOLDOWN_MS] 再开麦
+        //   —— 喇叭里还有尾音,立刻开麦会把最后半个字听成新输入。
+        //   ★ 重排时**带住原来的 fromHold**:按住说话那一下的语义不能因为多等 300ms 就变。
+        if (HerVoice.isSpeaking()) {
+            trace(app, "条子:她还在念 —— 先让她停,${EarSessionMath.COOLDOWN_MS}ms 后再开麦")
+            HerVoice.stop()
+            main.postDelayed({ startEarTurn(fromHold) }, EarSessionMath.COOLDOWN_MS)
+            return
+        }
         heardThisTurn = false
         turnFromHold = fromHold
         swipeCancelled = false
@@ -1420,6 +1457,13 @@ object ConMarnBubble {
         //   于是**再也不会自己收工**,麦一直开着。那是隐私那条线上的事。
         roundCancelled = false
         setListeningUI(true)
+        // ★★ 2026-11-08(体检 A3/E6)：**先挂「麦克风资格」，再开麦。**
+        //   悬浮球是 overlay 不是 Activity —— 屏幕上只有这颗球时，系统把本 App 当后台，
+        //   `AudioRecord` 不报错、只回一耳朵零。mic 型前台服务是唯一能让它真收音的形态。
+        //   ★ 这个类早就写好了，但**从来没被声明、也从来没被调用过**（死类）；
+        //     这一行是它第一次真正上岗。起不来时它会自己 trace 并收手，见 [EarFgService]。
+        //   ★ 幂等：一轮对话里每次开麦都会调到，服务已经在跑时只是再投一次 intent。
+        EarFgService.start(app)
         Ear.listen(app, earCallbacks)
         // ★ 灯只在**真的开起来了**才留着亮。[Ear.listen] 会在两种情况下原地打回、
         //   一个字节都不录(麦被推流占着 / 模型没装),那时 `isListening` 仍是 false。

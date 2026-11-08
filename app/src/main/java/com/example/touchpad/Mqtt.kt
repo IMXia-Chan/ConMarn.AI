@@ -406,6 +406,8 @@ object MqttClient {
      */
     private fun <T> session(b: MqttBroker, body: (MqttSession) -> T): T {
         check(b)?.let { throw IllegalStateException(it) }
+        // ★ 云端总闸：代理填成公网地址时，它也算云端。私有地址（家里那台）照常放行。
+        CloudNet.checkHost(b.host)
         val socket = if (b.tls) {
             (SSLSocketFactory.getDefault() as SSLSocketFactory)
                 .createSocket()

@@ -248,6 +248,7 @@ class TouchpadClient(context: Context) {
             fun openRaw(): Pair<BufferedInputStream, OutputStream>? {
                 if (myGen != generation.get() || !active.get()) return null
                 return try {
+                    CloudNet.checkHost(hostIp)   // 云端总闸：私有地址照常放行
                     val s = Socket()
                     s.tcpNoDelay = true   // 禁用 Nagle,减小控制帧延迟
                     s.keepAlive = true    // TCP keepalive,防网络层静默断连

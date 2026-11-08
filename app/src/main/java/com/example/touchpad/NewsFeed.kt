@@ -31,11 +31,11 @@ import java.util.Locale
  *   · 下一次取不到就显示缓存，并把「几点更新的」摆在标题旁边 ——
  *     一块写着旧闻却不说自己旧的屏，比空屏更坏。
  *
- * ## 和「云端兜底」的关系
+ * ## 和「云端总闸」的关系
  *
  * 取热点是**对外发一个请求**。他给云端兜底定过总闸语义：「关掉它，一个字节都不出去」
  * （见记忆 `ruoxi-cloud-fallback`）。所以这里也归那道闸管 ——
- * 关着的时候**不发**，屏上明写「云端兜底关着」，只用缓存。
+ * 关着的时候**不发**，屏上明写「云端总闸关着」，只用缓存。
  * 这条不是性能取舍，是那条闸说了算。
  *
  * ## 纯算术在 [NewsMath]
@@ -197,7 +197,7 @@ internal object NewsFeed {
 
     private fun fetchOne(app: Context, board: String): List<NewsItem>? {
         return try {
-            val conn = (URL(url(board)).openConnection() as HttpURLConnection).apply {
+            val conn = CloudNet.conn(url(board), app).apply {
                 connectTimeout = TIMEOUT
                 readTimeout = TIMEOUT
                 requestMethod = "GET"

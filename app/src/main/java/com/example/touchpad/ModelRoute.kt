@@ -186,7 +186,12 @@ internal object RouteMath {
             val s = line.trim()
             if (s.isEmpty() || s.startsWith("#")) continue
             val p = s.split('|').map { it.trim() }
-            if (p.size < 4) continue
+            // ★★ 2026-11-08:`< 5`,不是 `< 4`。下一行无条件读 `p[4]`,只挡 4 段的话,
+            //   最自然的一种写法「名字|地址|模型|key」(漏了「能干什么」)正好落在 4 段上
+            //   → 抛 IndexOutOfBoundsException。保存时这份原文是**不校验直接落盘**的,
+            //   从此每次进设置页 `refresh()` 在 UI 线程求值 endpoints 都会崩,重启也躲不掉。
+            //   写不全的行按上面的约定**跳过**,不报错。
+            if (p.size < 5) continue
             val can = HashSet<String>()
             for (token in p[4].split(',', '，', '、', '/' , ' ')) {
                 val t = token.trim()

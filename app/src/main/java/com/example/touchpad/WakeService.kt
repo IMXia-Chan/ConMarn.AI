@@ -79,7 +79,11 @@ class WakeService : Service() {
             ModelManager.get(this).trace(
                 "耳:唤醒前台服务起不来(${e.javaClass.simpleName}: ${e.message}) —— 后台听不到"
             )
-            WakeWordManager.onServiceFailed(this)
+            // ★★ 2026-11-08(体检):`intent == null` = 这次是系统把 START_STICKY 的服务
+            //   在后台重建时投的(见下面 return 前那段注释),不是他去按的开关。
+            //   那一路上**不能写盘** —— 否则夜里被系统杀一次,白天打开的唤醒开关
+            //   就被永久改成「关」了。理由写在 [WakeWordManager.onServiceFailed]。
+            WakeWordManager.onServiceFailed(this, persistOff = intent != null)
             stopSelf()
             return START_NOT_STICKY
         }

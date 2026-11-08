@@ -70,7 +70,13 @@ internal class EarMic(
             val min = AudioRecord.getMinBufferSize(
                 SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
             )
-            if (min <= 0) return fail("这台手机的麦克风不支持 16k 单声道录音")
+            if (min <= 0) {
+                // ★★ 2026-11-08:早退**必须**松手。这里在 acquire 之后、catch 之外,
+                //   漏一次 release 不是崩,是「耳朵从此永久被唤醒占着」——
+                //   见 [MicGate] 的文件头,那种失败一句日志都没有。
+                MicGate.release(owner)
+                return fail("这台手机的麦克风不支持 16k 单声道录音")
+            }
             // 缓冲给两倍最小:太小会在系统忙的时候丢样本(丢的是句首,最难发现),
             // 太大则 VAD 断句会滞后。两倍是个已经被 [MediaStreamer] 验过的折中。
             val r = AudioRecord(
@@ -79,6 +85,7 @@ internal class EarMic(
             )
             if (r.state != AudioRecord.STATE_INITIALIZED) {
                 r.release()
+                MicGate.release(owner)   // ★ 同上一处:早退不松手 = 麦克风被永久占住
                 return fail("麦克风初始化失败(可能被别的应用占着)")
             }
             r.startRecording()

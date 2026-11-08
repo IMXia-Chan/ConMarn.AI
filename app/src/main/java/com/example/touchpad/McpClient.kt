@@ -145,7 +145,7 @@ object McpClient {
      * @param wantId 0 = 通知（不等响应）；其它 = 读到这一条就可以停。
      */
     private fun post(server: McpServer, body: String, wantId: Int): String {
-        val conn = (URL(server.url).openConnection() as HttpURLConnection).apply {
+        val conn = CloudNet.conn(server.url).apply {
             requestMethod = "POST"
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS

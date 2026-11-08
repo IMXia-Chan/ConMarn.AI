@@ -47,12 +47,19 @@ class AiAgent(private val client: TouchpadClient) {
         var cloudApiKey: String = "",                           // 空 = 不启用兜底
         // ★★ 2026-10-09:兜底的**总开关**。以前「关掉云端」只有一条路 —— 把 key 删空,
         //   而 key 删了下次想用还得重新找回来。这一条让它变成一个能来回拨的钮
-        //   (她房间的 ⚙ 里那一行「云端兜底」)。
+        //   (她房间的 ⚙ 里那一行「云端总闸」)。
         //
-        //   ★ 默认 **true** —— 有 key 的人行为和以前**一个字都不差**,这不是新功能上线。
+        //   ★★ 2026-11-08:默认值从 true 改成 **false**。官网对外写的是「默认关闭」
+        //      (中英各三处),而「装好就会联网」和这个 App 的定位相反 —— 对外说的话
+        //      和代码里的行为必须是同一件事。他拨过一次之后按他拨的走;没拨过 = 不开。
         //   ★ 它和 key 是**两把锁,串着**的:两个都开才出手机。谁少一个都不发。
         //     (所以「有 key 但开关关了」是合法状态 —— 那正是他要的那个位置。)
-        var cloudOn: Boolean = true,
+        var cloudOn: Boolean = false,
+        // ★★ 2026-11-08（他点名要的）:前缀快照的**自动**预热。开 = 开机后自己挑时间算；
+        //   关 = 只有他在设置里按「现在就算一次」才动。手动那一路**优先于**温度闸。
+        //   ★ 这一项和 [cloudOn] 不同,它压在**算力**上,不是隐私上 —— 所以默认开着:
+        //     不开的话新装的人第一句话永远是冷的,而他并不知道有这个开关。
+        var prefillAuto: Boolean = true,
         // ★★ 「假名」那一档：出门的号码换成**稳定的代号**（`[PHONE_3f2a91]`），
         //   回来再换回去（见 [AliasMath]）。默认**开** —— 因为它只减不增：
         //   老样子是 `[手机号]`（值本来就不发），这一档多发出去的只有「同/不同」这个关系，
@@ -402,6 +409,23 @@ class AiAgent(private val client: TouchpadClient) {
      *   两种都不该由用户的那一句话来买单。冷却过后会自动重新给它机会。
      */
     @Volatile private var localBadUntil = 0L
+
+    /**
+     * 「这一段公共前缀,现在**还欠着一次冷算**」。启动时保守地当作 true。
+     *
+     * ★★ 2026-11-08 真机取证(卸载重装之后 slots/ 是空的):
+     *   冷算这份 4889 token 的前缀,降频下实测是**十几分钟**。能把它算完的只有两条路:
+     *     · 预热 —— 预算 30 分钟,算完会存快照;
+     *     · 用户自己那一轮 —— 读超时只有 [Config.llmTimeoutMs] = **120 秒**,
+     *       而超时那条路**刻意不存快照**(残废前缀比没有更毒,见 [warmUpOnce] 的 catch)。
+     *   于是成了一个死循环:用户一发话 → 预热看见「有任务在跑」让路 → 用户那一条 120 秒被杀
+     *   → 不存快照 → 下次还是冷算。**连开两次机,预热都被他第一句话挤掉。**
+     *
+     * 所以:还欠着冷算的时候,本地这一轮按 [WARMUP_TIMEOUT_MS] 等,让**用户自己这一句**
+     * 也能把前缀算完并存下来;快照一旦还原成功或存盘成功,立刻回到正常的 120 秒。
+     * 代价说清楚:这一次他真的会等十几分钟 —— 但那比「永远等不到」强,而且只付一次。
+     */
+    @Volatile private var coldPrefill = true
 
     // 行为采集:单任务(running 保证),runLoop 跑在单线程,start() 统一收口,不用锁。
     private var currentTrace: JSONObject? = null
@@ -786,9 +810,12 @@ class AiAgent(private val client: TouchpadClient) {
      *   是用户实打实等掉的(问一句天气等了四分钟),而且等完照样得走云端 ——
      *   因为冷算要 685 秒,150 秒本来就等不到。**等一个等不到的东西,是最贵的那种等。**
      *
+     * @param manual `true` = 他在设置里按了「现在就算一次」。**那一路优先**：
+     *   温度闸只替自动那一路挑时间，不替他做决定 —— 见 [warmUpOnce]。
+     *
      * @return null = 成功;否则是给日志看的原因。不抛异常 —— 预热不该影响任何流程。
      */
-    fun warmUp(): String? {
+    fun warmUp(ctx: Context, manual: Boolean = false): String? {
         // 正在跑任务时别插队:预热是 91 秒的 CPU 密集冷算,和用户那轮抢 8 个核只会
         // 把用户的 deadline 拖光(不是占 slot 的问题 —— 是抢算力)。
         if (running.get()) return "有任务在跑,跳过"
@@ -799,7 +826,7 @@ class AiAgent(private val client: TouchpadClient) {
         warmDone = java.util.concurrent.CountDownLatch(1)
         warming = true
         try {
-            return warmUpOnce()
+            return warmUpOnce(ctx, manual)
         } finally {
             warming = false
             warmDone.countDown()
@@ -874,7 +901,7 @@ class AiAgent(private val client: TouchpadClient) {
         return ToolDrift.Shape(params, required)
     }
 
-    private fun warmUpOnce(): String? {
+    private fun warmUpOnce(ctx: Context, manual: Boolean): String? {
         // 预热就是在给「SYSTEM_PROMPT + 工具表」这截前缀付钱,所以正好在这儿顺手对一次账:
         // 前缀一旦和电脑那边的工具表不一致,花的钱买的就是一份过期菜单。
         checkToolDrift()
@@ -911,8 +938,38 @@ class AiAgent(private val client: TouchpadClient) {
             return null
         }
 
+        // ★★ 2026-11-08（他点名要的）:「自动预热」关了 = **只还原、不冷算**。
+        //   ★ 为什么这一句在温度闸**前面**:否则关了开关之后 [HerBoot] 收到的还是
+        //     「等凉了再算」，它照样按 3 分钟一问等满两小时 —— 开关等于没关。
+        //   ★ 为什么在还原**后面**:开关管的是「别自己烧算力」，不是「别用存好的快照」。
+        //     开机把上次算好的 KV 读回来只要几百毫秒，那是净赚。
+        if (!manual && !config.prefillAuto) {
+            trace("自动预热已关 —— 只还原快照，冷算这次不做")
+            return "自动预热已关"
+        }
+
+        // ★★ 2026-11-08：**冷算不是随时都能开始。**
+        //   今天这一次烫着算（56.7°C、~3 token/秒）跑了 30 分钟只到 6144，
+        //   超时、按设计不存盘 —— 一小时的热白烧。而同一份前缀 10-04 那次
+        //   在降频下有 19 分钟的记录：差别不在代码，在**开始算的时候手机凉不凉**。
+        //   规矩见 [PrefillGate]：插着电 ≤38°C、没插电 ≤34°C，读不到温度就不算。
+        //   返回的字符串带「等凉了再算」这五个字 —— [HerBoot] 靠它决定过几分钟再来问。
+        val gateWhy = PrefillGate.whyNotNow(ctx)
+        if (gateWhy != null) {
+            if (!manual) {
+                trace("冷算先不开：$gateWhy")
+                return "等凉了再算：$gateWhy"
+            }
+            // ★★ 手动**优先**：他按了「现在就算一次」，就按他说的算。
+            //   温度闸的职责是替**自动**那一路挑时间，不是替他做决定。
+            //   代价照实记：热着算会慢很多（实测 3 token/秒），也可能撞上 60 分钟超时。
+            trace("手动预热：跳过温度闸（$gateWhy）")
+        }
+
         return try {
-            val res = chatOnce(url, body, WARMUP_TIMEOUT_MS, config.apiKey)
+            // ★ 预热用 [PREFILL_TIMEOUT_MS]（60 分钟），**不是** [WARMUP_TIMEOUT_MS]：
+            //   后者同时管着「用户正等着的那一轮」，把用户的上限抬到一小时是不可以的。
+            val res = chatOnce(url, body, PREFILL_TIMEOUT_MS, config.apiKey)
             // 算完了顺手存下来 —— 这十几分钟以后就不用再付了。
             // ★ 把服务端自报的 `usage.prompt_tokens` 一起带过去,当「完整」的判据
             //   (它是唯一能验出残废快照的东西 —— 见 [savePrefixSnapshot])。
@@ -941,9 +998,15 @@ class AiAgent(private val client: TouchpadClient) {
             // 正确的做法是**别让它被掐死**:[WARMUP_TIMEOUT_MS] 已经放到实测冷算的好几倍。
             // 真撞上超时说明情况超出预期,那就老实不存 —— 下次再冷算一遍,
             // 也**好过留一份看起来没问题的坏快照**。
-            trace("预热没等到回包就超时了 —— 本轮**不存盘**" +
-                    "(客户端断线会把服务端的前缀计算掐死在 batch 边界,存下来的是残废前缀)")
-            return null
+            // ★★ 2026-11-08：这里原来 `return null`，而 null 的契约是**成功**。
+            //   于是 04:25:50 那一次明明超时放弃了，[HerBoot] 还是打了一句
+            //   「预热完成 1800079ms(用户第一轮将命中前缀缓存)」—— 一行完成、
+            //   一行作废，两句都在日志里，谁先看到谁被骗。
+            //   超时就是没成，必须如实返回原因。
+            val why = "预热没等到回包就超时(${PREFILL_TIMEOUT_MS / 60_000} 分钟)—— 本轮**不存盘**" +
+                    "(客户端断线会把服务端的前缀计算掐死在 batch 边界,存下来的是残废前缀)"
+            trace(why)
+            return why
         } catch (e: Exception) {
             "${e.javaClass.simpleName}: ${e.message}"
         }
@@ -1045,6 +1108,8 @@ class AiAgent(private val client: TouchpadClient) {
             trace("快照还原的数量对不上(盘上 $saved,槽里 $restored)—— 回退冷算")
             return null
         }
+        // 前缀已经在槽里了 —— 从现在起这一轮不再欠冷算,读超时回到正常值。
+        coldPrefill = false
         return restored
     }
 
@@ -1092,9 +1157,44 @@ class AiAgent(private val client: TouchpadClient) {
             trace("快照对账文件写不进去(${e.javaClass.simpleName})—— 下次会回退冷算")
             return
         }
+        // 存下来了 —— 下次开机直接还原,这一轮之后读超时也回到正常值。
+        coldPrefill = false
         trace("前缀快照已存盘:$saved token($fileName)")
         pruneStaleSnapshots(env, key)
     }
+
+    /**
+     * 设置页要看的「快照现在是什么状态」。**只读盘,不问服务端** —— 模型起没起来、
+     * 温度高不高都不影响这个判断,所以设置页可以随时调。
+     *
+     * ★ 判的是**当前这一份**「提示词 + 工具表 + 模型」的哈希。提示词一改,名字就换,
+     *   旧的还躺在盘上但**不会被还原** —— 这时候这里回 null 是对的:对用户来说,
+     *   现在这一份确实还没算过。
+     *
+     * @return null = 当前这份的 `.bin` 不在盘上;否则带上 token 数、体积、存盘时间。
+     *         `tokens <= 0` = 文件在、但对账文件读不出来 —— 那份实际还原不了
+     *         (见 [restorePrefixSnapshot]),界面要按「还没有」说。
+     */
+    fun snapshotStatus(): SnapshotStatus? {
+        val env = snapshotEnvOrNull() ?: return null
+        val key = snapshotKey(env)
+        val f = java.io.File(env.dir, PrefixSnapshot.fileName(key))
+        if (!f.isFile) return null
+        val tokens = try {
+            PrefixSnapshot.decodeMeta(
+                java.io.File(env.dir, PrefixSnapshot.metaName(key)).readText(Charsets.UTF_8)
+            )
+        } catch (e: Exception) {
+            -1
+        }
+        return SnapshotStatus(tokens, f.length(), f.lastModified())
+    }
+
+    /** 见 [snapshotStatus]。`tokens <= 0` = 文件在但对账不上,实际不能用。 */
+    class SnapshotStatus(val tokens: Int, val bytes: Long, val atMs: Long)
+
+    /** 预热是不是正在跑。设置页据此把「现在就算一次」这一颗说清楚。 */
+    fun prefillRunning(): Boolean = warming
 
     /**
      * 把**不是当前这一份**的快照删掉。
@@ -1616,8 +1716,15 @@ class AiAgent(private val client: TouchpadClient) {
      *   这两件事的修法完全相反。
      * ★ **只记工具名和成败**,不记参数内容:参数里装的常常是他说的原话。
      */
-    private fun dispatch(name: String, args: JSONObject, cb: Callback): JSONObject {
-        val r = dispatchInner(name, args, cb)
+    private fun dispatch(
+        name: String, args: JSONObject, cb: Callback,
+        // ★ 2026-11-08（体检 D4）：**这一件活自己的**停止令牌。null = 「她」那条路，落回全局那个。
+        //   以前这条链只认全局 [cancelFlag]，于是工作台里一件活点「停止」时，
+        //   它正卡在「等电脑回执」（最多 25 秒）那一段里**停不下来** ——
+        //   而那一段恰恰是最长的死时间。
+        cancel: AtomicBoolean? = null,
+    ): JSONObject {
+        val r = dispatchInner(name, args, cb, cancel)
         runCatching {
             val ok = r.optBoolean("ok")
             val why = if (ok) "" else ": " + r.optString("error").take(80)
@@ -1631,7 +1738,10 @@ class AiAgent(private val client: TouchpadClient) {
         return r
     }
 
-    private fun dispatchInner(name: String, args: JSONObject, cb: Callback): JSONObject {
+    private fun dispatchInner(
+        name: String, args: JSONObject, cb: Callback,
+        cancel: AtomicBoolean? = null,
+    ): JSONObject {
         // 这一步**已经问过他**了吗 —— 给下面「逐步」档判「要不要再问一遍」用。
         var stepped = false
 
@@ -1717,7 +1827,7 @@ class AiAgent(private val client: TouchpadClient) {
 
         // ── 通用入口:她伸手之前先看清自己有哪几只手(见 [listHands] / [useHand]) ──
         if (name == "list_hands") return listHands(args)
-        if (name == "use_hand") return useHand(args, cb)
+        if (name == "use_hand") return useHand(args, cb, cancel)
         if (name == "skill_list") return skillList()
         if (name == "skill_save") return skillSave(args)
         if (name == "skill_new") return skillNew(args, cb)
@@ -1728,10 +1838,10 @@ class AiAgent(private val client: TouchpadClient) {
         if (name == "delegate") return delegate(args, cb)
         if (name == "read_url") return readWeb(args, cb)
         if (name == "click_element") {
-            return clickElement(args.optString("description", ""), cb)
+            return clickElement(args.optString("description", ""), cb, cancel)
         }
         if (name == "click_ui") {
-            val r = callPc("click_ui", args, cb)
+            val r = callPc("click_ui", args, cb, cancel)
             if (r.optBoolean("ok")) return r
             val nm = args.optString("name", "")
 
@@ -1776,9 +1886,9 @@ class AiAgent(private val client: TouchpadClient) {
                 // 而不是「看见了但没有」。没材料就没有策略可言,退回通用兜底。
                 // 这条不写进经验库:它描述不了任何界面,记下来只会污染。
                 cb.onLog("界面上没有叫「$nm」的控件,改用视觉定位(要几分钟,别切走)…")
-                return clickElement(nm, cb)
+                return clickElement(nm, cb, cancel)
             }
-            return resolveMiss(obs, nm, args, cb)
+            return resolveMiss(obs, nm, args, cb, cancel)
         }
         if (name == "type") {
             // 「打字」是唯一会把**内容**写进电脑、且内容由模型临时拼出来的动作。
@@ -1801,7 +1911,7 @@ class AiAgent(private val client: TouchpadClient) {
                 cb.onLog(ConfirmMath.shortUser(verdict))
                 return JSONObject().put("ok", false).put("error", ConfirmMath.reason(verdict))
             }
-            return callPc("type", args, cb)
+            return callPc("type", args, cb, cancel)
         }
         if (name == "set_value") {
             // 「把某个框里的内容**整个换成**这段字」—— 和 type 一样是往电脑里写内容,
@@ -1821,9 +1931,9 @@ class AiAgent(private val client: TouchpadClient) {
                 cb.onLog(ConfirmMath.shortUser(verdict))
                 return JSONObject().put("ok", false).put("error", ConfirmMath.reason(verdict))
             }
-            return callPc("set_value", args, cb)
+            return callPc("set_value", args, cb, cancel)
         }
-        return callPc(name, args, cb)
+        return callPc(name, args, cb, cancel)
     }
 
     // ------------------------------------------------------------------
@@ -1884,7 +1994,12 @@ class AiAgent(private val client: TouchpadClient) {
      * 「在电脑上打字前先让用户点确认」这条规矩,只要模型改走 `use_hand` 就没了 ——
      * 而且**没有任何报错**,只是某天开始不再弹确认框。所以这里必须走同一条路。
      */
-    private fun useHand(args: JSONObject, cb: Callback): JSONObject {
+    private fun useHand(
+        args: JSONObject, cb: Callback,
+        // ★ 2026-11-08（体检 D4）：原样带进去 —— 电脑那只手最终要落回 [dispatch]，
+        //   令牌要一路跟到 [callPcOnce] 那个等回执的循环里，否则「停止」管不到它。
+        cancel: AtomicBoolean? = null,
+    ): JSONObject {
         val hands = HandRegistry.all()
         val want = AiAgent.jsonText(args.opt("hand"))?.trim().orEmpty()
         val tool = AiAgent.jsonText(args.opt("tool"))?.trim().orEmpty()
@@ -1988,7 +2103,7 @@ class AiAgent(private val client: TouchpadClient) {
             if (!config.cloudOn) {
                 return JSONObject().put("ok", false).put(
                     "error",
-                    "「云端兜底」关着 —— 我往外发任何东西都先停着，这个工具现在用不了。" +
+                    "「云端总闸」关着 —— 我往外发任何东西都先停着，这个工具现在用不了。" +
                         "要查就先去设置里把它打开。"
                 )
             }
@@ -2000,7 +2115,7 @@ class AiAgent(private val client: TouchpadClient) {
         }
 
         // 电脑、以及以后所有「转发型」的手:走同一条 dispatch,机制一个都不少。
-        return dispatch(t.name, inner, cb)
+        return dispatch(t.name, inner, cb, cancel)
     }
 
     // ------------------------------------------------------------------
@@ -2033,6 +2148,20 @@ class AiAgent(private val client: TouchpadClient) {
         val cancel: AtomicBoolean = AtomicBoolean(false),
     ) {
         val delegates = AtomicInteger(0)
+
+        /**
+         * 这件活**开跑**的时刻（晚于它的一律不算「它知道的」）。
+         *
+         * ★★ 2026-11-08（真机复现的漏）：工作台同时挂两件，一件跑完的成品会写进共用记忆
+         *   （见 [settle]），另一件派活时又去库里捞（[askOne] → [AgentMemory.recallBlock]）——
+         *   于是「分工」那件答出了「接力」那件的原文（他问「第二句是谁说的」，
+         *   回的是另一件的「一，列出三种水果」）。
+         *
+         *   共用记忆本身是要的：跨天、跨活的经验，谁也不该重学一遍。漏的只是**同批并行** ——
+         *   它不该看见「比自己晚开始的那几件」刚写进去的东西。所以派活时只查**比这一刻早**的条目。
+         *   串行跑的活照旧看得见先跑完的那些（那才是「借鉴以前的成品」）。
+         */
+        val startedAt: Long = System.currentTimeMillis()
     }
 
     /** 工作台同时最多跑几件（[WorkJobMath.MAX_ACTIVE]）。多出来的在门口排队。 */
@@ -2109,14 +2238,14 @@ class AiAgent(private val client: TouchpadClient) {
             )
         }
         if (!config.cloudOn) {
-            return bad("云端关着(设置 → 云端兜底),这一步只能在本地算。你自己做。")
+            return bad("云端关着(设置 → 云端总闸),这一步只能在本地算。你自己做。")
         }
         // ★ 和超级/agent 两条路同一个判据（见 [runSuper]）：key 可以只填在
         //   「模型清单」的那一家上。只看 cloudApiKey 会把他刚配好的清单当成没配。
         if (config.cloudApiKey.isEmpty() &&
             RouteMath.pick(config.endpoints, RouteMath.TEXT) == null
         ) {
-            return bad("还没填云端 key（设置 → 云端兜底 或 模型清单），派不出去。这一步你自己做。")
+            return bad("还没填云端 key（设置 → 云端总闸 或 模型清单），派不出去。这一步你自己做。")
         }
 
         // ★ 先判能不能出门,再决定派不派 —— 顺序反了就会出现「已经排好队,才发现里面有号码」。
@@ -2332,13 +2461,13 @@ class AiAgent(private val client: TouchpadClient) {
         cb: Callback,
         attach: String = "",
     ): JSONObject {
-        if (!config.cloudOn) return bad("云端关着（设置 → 云端兜底），这一档自己写不了代码。")
+        if (!config.cloudOn) return bad("云端关着（设置 → 云端总闸），这一档自己写不了代码。")
         // ★ 2026-11-06:key 可以只填在「模型清单」的那一家上（见 [RouteMath.pick]）。
         //   两边都没有才算没配 —— 只看 cloudApiKey 会把他刚配好的清单当成没配。
         if (config.cloudApiKey.isEmpty() &&
             RouteMath.pick(config.endpoints, RouteMath.CODE) == null
         ) {
-            return bad("还没填云端 key（设置 → 云端兜底 或 模型清单）。")
+            return bad("还没填云端 key（设置 → 云端总闸 或 模型清单）。")
         }
         val job = WorkJobStore.find(jobId) ?: return bad("这件活找不着了（可能已经被删掉）。")
         if (what.isBlank()) return bad("要做的东西没写。")
@@ -2656,11 +2785,11 @@ class AiAgent(private val client: TouchpadClient) {
         cb: Callback,
         attach: String = "",
     ): JSONObject {
-        if (!config.cloudOn) return bad("云端关着（设置 → 云端兜底）。agent 自己不会思考 —— 它只在云端跑。")
+        if (!config.cloudOn) return bad("云端关着（设置 → 云端总闸）。agent 自己不会思考 —— 它只在云端跑。")
         if (config.cloudApiKey.isEmpty() &&
             RouteMath.pick(config.endpoints, RouteMath.CODE) == null
         ) {
-            return bad("还没填云端 key（设置 → 云端兜底 或 模型清单）。")
+            return bad("还没填云端 key（设置 → 云端总闸 或 模型清单）。")
         }
         val job = WorkJobStore.find(jobId) ?: return bad("这件活找不着了（可能已经被删掉）。")
         val p = AgentProfileStore.find(agentId)
@@ -2827,11 +2956,11 @@ class AiAgent(private val client: TouchpadClient) {
                     "活存在=${WorkJobStore.find(jobId) != null} 话长=${what.length}"
             )
         }
-        if (!config.cloudOn) return bad("云端关着（设置 → 云端兜底）。超级 agent 只在云端跑。")
+        if (!config.cloudOn) return bad("云端关着（设置 → 云端总闸）。超级 agent 只在云端跑。")
         if (config.cloudApiKey.isEmpty() &&
             RouteMath.pick(config.endpoints, RouteMath.CODE) == null
         ) {
-            return bad("还没填云端 key（设置 → 云端兜底 或 模型清单）。")
+            return bad("还没填云端 key（设置 → 云端总闸 或 模型清单）。")
         }
         val job = WorkJobStore.find(jobId) ?: return bad("这件活找不着了（可能已经被删掉）。")
         if (what.isBlank()) return bad("要做的东西没写。")
@@ -3034,7 +3163,8 @@ class AiAgent(private val client: TouchpadClient) {
     ): CodeHit = when (name) {
         "list_hands" -> CodeHit(true, listHands(args).toString())
         "use_hand" -> {
-            val r = useHand(args, cb)
+            // ★ 带上这件活自己的停止令牌（见 [JobCtx.cancel] / 体检 D4）。
+            val r = useHand(args, cb, ctx?.cancel)
             CodeHit(r.optBoolean("ok"), r.toString())
         }
         // ★ 日程直接落到手机那只手上，**不套 use_hand 那一层**。
@@ -3132,12 +3262,18 @@ class AiAgent(private val client: TouchpadClient) {
      *
      * ★ 存之前先看一眼档案还在不在 —— 他完全可能在跑的过程中把这件活「彻底删」掉，
      *   这时候再写回去，删掉的活会自己长回来。
+     *
+     * ★★ 2026-11-08（体检 D2）：**写回必须落在「现在」的那份档案上，不是开跑前的快照。**
+     *   原来只判了「还在不在」，然后用 `job`（开跑那一刻的那一份）去 copy ——
+     *   这一轮跑了几十秒到几分钟，中间他做的任何事都会被**整份盖掉**：
+     *   归档 → 活自己从「已归档」里跳回来；改名/改档位同理。
+     *   现在先重读，只在它上面改状态和会话；归档标记、归档时间这些一律以盘上为准。
      */
     private fun settle(job: WorkJob, status: String, final: String?): WorkJob {
-        if (WorkJobStore.find(job.id) == null) return job
-        val turns = if (final.isNullOrBlank()) job.turns
-        else WorkJobMath.appendTurn(job.turns, WorkTurn.ASSISTANT, final)
-        val next = job.copy(status = status, updatedAt = System.currentTimeMillis(), turns = turns)
+        val cur = WorkJobStore.find(job.id) ?: return job
+        val turns = if (final.isNullOrBlank()) cur.turns
+        else WorkJobMath.appendTurn(cur.turns, WorkTurn.ASSISTANT, final)
+        val next = cur.copy(status = status, updatedAt = System.currentTimeMillis(), turns = turns)
         WorkJobStore.save(next)
         // ★★ 2026-11-06：收工的成品记进**共用记忆**（他选的是「只记最后的成品」）。
         //   位置放在这里，因为它是一件事**结束**的那一个点 —— 分工、接力、agent、超级、
@@ -3241,7 +3377,7 @@ class AiAgent(private val client: TouchpadClient) {
      *   （带真 token），所以办公室里能看到「中枢」这个人真的在说话，而不是凭空冒出一段字。
      */
     private fun quickReply(what: String, cb: Callback, ctx: JobCtx? = null): JSONObject {
-        if (!config.cloudOn) return bad("云端关着(设置 → 云端兜底)，这一句回不了。")
+        if (!config.cloudOn) return bad("云端关着(设置 → 云端总闸)，这一句回不了。")
         if (config.cloudApiKey.isEmpty()) return bad("还没填云端 key。")
         val bt = ctx?.task ?: busTask
         val role = "中枢"
@@ -3321,7 +3457,7 @@ class AiAgent(private val client: TouchpadClient) {
         cb: Callback,
         ctx: JobCtx? = null,
     ): JSONObject {
-        if (!config.cloudOn) return bad("云端关着(设置 → 云端兜底),这一步只能在本地算。你自己做。")
+        if (!config.cloudOn) return bad("云端关着(设置 → 云端总闸),这一步只能在本地算。你自己做。")
         if (config.cloudApiKey.isEmpty()) return bad("还没填云端 key,派不出去。这一步你自己做。")
 
         val bt = ctx?.task ?: busTask
@@ -3419,17 +3555,25 @@ class AiAgent(private val client: TouchpadClient) {
         val peerNames = specs.map { it.role }
         val pool = Executors.newFixedThreadPool(specs.size.coerceAtMost(MAX_PARALLEL))
         val futures = specs.map { s -> pool.submit(Callable { askOne(s, facts, ctx, peerNames) }) }
-        val results = futures.mapIndexed { i, f ->
-            try {
-                f.get(config.llmTimeoutMs.toLong() + 15_000L, TimeUnit.MILLISECONDS)
-            } catch (e: Exception) {
-                // ★ 停止令牌抛出来的 CancelException 会被 ExecutionException 包一层，
-                //   所以要看 cause；不挑出来的话，「停止」会被记成「这几份都没回来」。
-                if (e.cause is CancelException) throw e.cause as CancelException
-                One(specs[i].role, specs[i].task, "", humanError(e))
+        val results = try {
+            futures.mapIndexed { i, f ->
+                try {
+                    f.get(config.llmTimeoutMs.toLong() + 15_000L, TimeUnit.MILLISECONDS)
+                } catch (e: Exception) {
+                    // ★ 停止令牌抛出来的 CancelException 会被 ExecutionException 包一层，
+                    //   所以要看 cause；不挑出来的话，「停止」会被记成「这几份都没回来」。
+                    if (e.cause is CancelException) throw e.cause as CancelException
+                    One(specs[i].role, specs[i].task, "", humanError(e))
+                }
             }
+        } finally {
+            // ★★ 2026-11-08（体检 D5）：`shutdown` 原来写在循环**后面** —— 上面那条
+            //   `throw e.cause` 一抛，这一行就永远走不到：池子里的线程（连同还在飞的
+            //   云端请求）一直挂着。一件活被停一次漏一个池子，通宵跑就是一串。
+            //   放进 finally，正常收工 / 停止 / 异常三条路都会收；`shutdownNow` 顺带
+            //   把还在算的那几份掐掉 —— 已经停了就没必要再替它算完。
+            pool.shutdownNow()
         }
-        pool.shutdown()
 
         val round1 = results.filter { it.text.isNotBlank() }.map { FanoutMath.Answer(it.role, it.text) }
         if (round1.isEmpty()) {
@@ -3635,7 +3779,7 @@ class AiAgent(private val client: TouchpadClient) {
         cb: Callback,
         ctx: JobCtx? = null,
     ): JSONObject {
-        if (!config.cloudOn) return bad("云端关着(设置 → 云端兜底),这一步只能在本地算。你自己做。")
+        if (!config.cloudOn) return bad("云端关着(设置 → 云端总闸),这一步只能在本地算。你自己做。")
         if (config.cloudApiKey.isEmpty()) return bad("还没填云端 key,派不出去。这一步你自己做。")
         val bt = ctx?.task ?: busTask
 
@@ -3868,7 +4012,9 @@ class AiAgent(private val client: TouchpadClient) {
             //     照旧看得见全部内容。
             val vault = RedactMath.Vault()
             val shared = try {
-                AgentMemory.recallBlock(spec.task)?.let { vault.redact(it) }
+                // ★★ 2026-11-08：只看**这件活开跑之前**记下的。同批并行的另一件刚收工写进去的
+                //   成品不算数 —— 真机上「分工」就是这么答出「接力」那句水果的。
+                AgentMemory.recallBlock(spec.task, ctx?.startedAt)?.let { vault.redact(it) }
             } catch (_: Exception) { null }
             if (!vault.isEmpty()) trace("派活脱敏：换掉 ${vault.size()} 处标识")
             val withShared = if (shared.isNullOrBlank()) base else base + "\n\n" + shared
@@ -4214,7 +4360,7 @@ class AiAgent(private val client: TouchpadClient) {
         //   也不能让界面上那句承诺和实际行为对不上。
         if (!config.cloudOn) {
             return bad(
-                "「云端兜底」关着，我不往外发任何请求，网页也先不取。" +
+                "「云端总闸」关着，我不往外发任何请求，网页也先不取。" +
                     "要我查网页就去设置里把它打开（打开前你就能看见它要发什么）。"
             )
         }
@@ -4311,7 +4457,7 @@ class AiAgent(private val client: TouchpadClient) {
         var cur = start
         var hops = 0
         while (true) {
-            val conn = (URL(cur).openConnection() as HttpURLConnection).apply {
+            val conn = CloudNet.conn(cur).apply {
                 // ★ 2026-11-07 收紧：原来 10s / 20s。他问「什么是分布式 agent」，
                 //   模型自作主张去读网页，四次各卡 20 秒，最后什么都没答上。
                 //   抓不到就是抓不到，卡得久只会把「答不上来」拖成「半天没反应」。
@@ -4912,7 +5058,12 @@ class AiAgent(private val client: TouchpadClient) {
      * **依次试前两条**(第一条不灵得有第二条顶上,而「不灵」正是置信度该吸收的信息)。
      * 每次执行完都报账,好的升、坏的沉 —— 这就是「越用越强」的全部机制。
      */
-    private fun resolveMiss(obs: JSONObject, name: String, args: JSONObject, cb: Callback): JSONObject {
+    private fun resolveMiss(
+        obs: JSONObject, name: String, args: JSONObject, cb: Callback,
+        // 这一件活自己的停止令牌（见 [dispatch] / 体检 D4）—— 这条兜底链最长，
+        // 里面每一步都是「等电脑回执」，令牌必须一路带到 [callPcOnce]。
+        cancel: AtomicBoolean? = null,
+    ): JSONObject {
         val kind = obs.optString("kind").ifEmpty { "blind" }
         cb.onLog("「$name」不在这一屏上(${obsBrief(obs)})—— 查经验库…")
 
@@ -4924,7 +5075,7 @@ class AiAgent(private val client: TouchpadClient) {
         // UIA **证明了**控件在屏幕外,再看一眼它也不会自己挪进来。只补一次,不循环。
         if (kind != "offscreen") {
             cb.onLog("先直接再看一眼(可能只是画面没准备好)…")
-            retryFind(args, cb)?.let { return it }
+            retryFind(args, cb, cancel)?.let { return it }
         }
 
         // ------------------------------------------------------------------
@@ -4982,18 +5133,18 @@ class AiAgent(private val client: TouchpadClient) {
         /** 按顺序试一批经验(内部还有一层动词顺序)。→ 成功给结果,全失败给 null。 */
         fun attempt(batch: List<ExperienceStore.Exp>): JSONObject? {
             for (exp in batch) {
-                checkCancel()
+                checkCancel(cancel)
                 tried.add(exp)
                 var ok: JSONObject? = null
                 var ranSomething = false
                 for (v in exp.verbs) {
-                    checkCancel()
+                    checkCancel(cancel)
                     if (v == "visual") {
                         if (visualBudget <= 0) continue
                         visualBudget--
                     }
                     ranSomething = true
-                    ok = runVerb(v, name, args, cb)
+                    ok = runVerb(v, name, args, cb, cancel)
                     if (ok != null) break
                 }
                 // 报账。**成功才算赢,失败也算用过** —— 后者是让不好使的策略沉下去的那一半。
@@ -5043,12 +5194,15 @@ class AiAgent(private val client: TouchpadClient) {
      * 失败**不抛异常**:它不是「出错」,而是「这条不行,换下一条」。抛异常会把
      * 「策略选错了」和「电脑断线了」混成同一种东西,而那两者该有完全不同的处置。
      */
-    private fun runVerb(verb: String, name: String, args: JSONObject, cb: Callback): JSONObject? {
+    private fun runVerb(
+        verb: String, name: String, args: JSONObject, cb: Callback,
+        cancel: AtomicBoolean? = null,
+    ): JSONObject? {
         return when (verb) {
             "scroll" -> {
                 cb.onLog("经验库:先滚一屏,看看它是不是在下面…")
-                callPc("scroll", JSONObject().put("direction", "down").put("amount", 3), cb)
-                retryFind(args, cb)
+                callPc("scroll", JSONObject().put("direction", "down").put("amount", 3), cb, cancel)
+                retryFind(args, cb, cancel)
             }
             "search" -> {
                 // 用界面**自己的搜索**把它捞出来 —— 不靠看,靠问。
@@ -5058,12 +5212,12 @@ class AiAgent(private val client: TouchpadClient) {
                 // (浏览器里 search 会真的搜出去、页面会跳到搜索结果 —— 那正是这一步想要的:
                 //  目标很可能就在结果列表里,retryFind 接着在结果页上找它。)
                 cb.onLog("经验库:用这个界面自己的搜索找「$name」…")
-                callPc("search", JSONObject().put("query", name), cb)
-                retryFind(args, cb)
+                callPc("search", JSONObject().put("query", name), cb, cancel)
+                retryFind(args, cb, cancel)
             }
             "visual" -> {
                 cb.onLog("经验库:按名字和认字都够不着了,只剩看图这条(几分钟,别切走)…")
-                clickElement(name, cb).takeIf { it.optBoolean("ok") }
+                clickElement(name, cb, cancel).takeIf { it.optBoolean("ok") }
             }
             else -> null
         }
@@ -5078,8 +5232,8 @@ class AiAgent(private val client: TouchpadClient) {
      * 那正是这轮要消灭的「特判手册」。留给实测:置信度机制会把它暴露出来 ——
      * 如果 search 老是「成功」但用户说没点到,那条经验的胜率自己会掉下去。
      */
-    private fun retryFind(args: JSONObject, cb: Callback): JSONObject? {
-        val again = callPc("click_ui", args, cb)
+    private fun retryFind(args: JSONObject, cb: Callback, cancel: AtomicBoolean? = null): JSONObject? {
+        val again = callPc("click_ui", args, cb, cancel)
         return again.takeIf { it.optBoolean("ok") }
     }
 
@@ -5119,7 +5273,7 @@ class AiAgent(private val client: TouchpadClient) {
         //   ★ 这两句分开写是因为**它们是两件事**:没 key 是「没配」,开关关着是「你不让它发」。
         //     合成一句的话,他关了云端之后会看到「没配云端 Key」—— 那是在说反话。
         if (!config.cloudOn) {
-            cb.onLog("(云端关着,用预置经验;想让它自己学,去设置里把「云端兜底」打开)")
+            cb.onLog("(云端关着,用预置经验;想让它自己学,去设置里把「云端总闸」打开)")
             return null
         }
         // ★ 2026-11-06:key 也可以只填在「模型清单」里 —— 两边都没有才算没配。
@@ -5254,8 +5408,12 @@ class AiAgent(private val client: TouchpadClient) {
      * 真正发请求、等回执的是 [callPcOnce] —— 拆开是因为这道闸最多要发两次
      * (第一次探路,第二次带着 `confirmed`),而那两次的网络那半一模一样。
      */
-    private fun callPc(tool: String, args: JSONObject, cb: Callback): JSONObject {
-        val first = callPcOnce(tool, args, confirmed = false)
+    private fun callPc(
+        tool: String, args: JSONObject, cb: Callback,
+        // ★ 2026-11-08（体检 D4）：这一件活自己的令牌；null = 「她」那条路（全局那个）。
+        cancel: AtomicBoolean? = null,
+    ): JSONObject {
+        val first = callPcOnce(tool, args, confirmed = false, cancel = cancel)
         // ★ 判据走 [RiskMath.tapNext](它有单测钉着),**不在这儿写裸字符串**:
         //   两边拼字对不上,这道闸就再也不响了,而且不报任何错 ——
         //   这个项目最恨的失效方式就是这个。
@@ -5288,7 +5446,7 @@ class AiAgent(private val client: TouchpadClient) {
         // ★ **全程只发两次**(探路 + 带凭证重发一次),没有循环 —— 所以「问不完」
         //   这种死法在这儿不存在。[RiskMath.tapNext] 那边也有一条测试钉着
         //   「问过就不许再问」,两处一起守着同一件事。
-        val again = callPcOnce(tool, args, confirmed = true)
+        val again = callPcOnce(tool, args, confirmed = true, cancel = cancel)
         if (RiskMath.tapNext(again.optString("blocked_by"), confirmedSent = true)
             == RiskMath.Tap.GIVE_UP
         ) {
@@ -5311,8 +5469,15 @@ class AiAgent(private val client: TouchpadClient) {
      *   ★ 这是全项目**唯一**一处把 `confirmed` 置真的地方。别的地方要动手,
      *     一律经过 [callPc] —— 谁绕过它,谁就绕过了第三层。
      */
-    private fun callPcOnce(tool: String, args: JSONObject, confirmed: Boolean): JSONObject {
-        checkCancel()
+    private fun callPcOnce(
+        tool: String, args: JSONObject, confirmed: Boolean,
+        // ★★ 2026-11-08（体检 D4）：**这一件活自己的**停止令牌。
+        //   原来是 `checkCancel()`（不带参数）= 只认全局那个，于是工作台里点「停止」
+        //   对这一段的等回执**完全无效**，最长要白等 25 秒（[config.toolTimeoutMs]）。
+        //   传 null 才落回全局 —— 「她」那条路一个字没改。
+        cancel: AtomicBoolean? = null,
+    ): JSONObject {
+        checkCancel(cancel)
         // ★ 没连电脑就**当场回绝**,不许去走那 25 秒超时 —— 那句话的措辞也是给模型看的:
         //   它据此如实对用户说「电脑没连上」,而不是自己编一个「已经打开了」。
         //   (超时那条路等 25 秒,等待期间她一声不吭,看起来和卡死一模一样。)
@@ -5329,7 +5494,7 @@ class AiAgent(private val client: TouchpadClient) {
             // 分片醒来轮询,这样「停止」能及时生效,不用死等一整个超时
             val deadline = System.currentTimeMillis() + config.toolTimeoutMs
             while (System.currentTimeMillis() < deadline) {
-                checkCancel()
+                checkCancel(cancel)
                 val r = q.poll(200, TimeUnit.MILLISECONDS)
                 if (r != null) return r
             }
@@ -5349,26 +5514,30 @@ class AiAgent(private val client: TouchpadClient) {
      * 坐标用 0~1000 的相对值来回传,而不是像素:模型对「图上第几个像素」没概念,
      * 但对「宽度的一半」这类相对位置准得多,而且换分辨率也不用改。
      */
-    private fun clickElement(description: String, cb: Callback): JSONObject {
+    private fun clickElement(
+        description: String, cb: Callback,
+        // ★ 2026-11-08（体检 D4）：这一件活自己的停止令牌，一路带到截图/定位/点击三段。
+        cancel: AtomicBoolean? = null,
+    ): JSONObject {
         if (description.isBlank()) {
             return JSONObject().put("ok", false).put("error", "没说要点什么")
         }
-        checkCancel()
+        checkCancel(cancel)
 
         // 0) 先把「眼」拉起来。顺序有讲究:**先拉起、后截图** —— 冷加载要几十秒,
         //    要是先截图,等模型好了屏幕上早不是那张图了,算出来的坐标也是对着旧图算的。
         ensureVision?.let { ensure ->
             cb.onLog("  正在拉起视觉模型(第一次要等十几秒)…")
-            checkCancel()
+            checkCancel(cancel)
             val err = ensure()
             if (err != null) {
                 return JSONObject().put("ok", false).put("error", "视觉模型起不来:$err")
             }
-            checkCancel()
+            checkCancel(cancel)
         }
 
         // 1) 让电脑截个屏
-        val shotResp = callPc("screenshot", JSONObject(), cb)
+        val shotResp = callPc("screenshot", JSONObject(), cb, cancel)
         if (!shotResp.optBoolean("ok")) {
             return JSONObject().put("ok", false)
                 .put("error", "截图失败:${shotResp.optString("error", "未知")}")
@@ -5383,19 +5552,19 @@ class AiAgent(private val client: TouchpadClient) {
         }
 
         // 2) 问「视觉模型」:它在哪
-        checkCancel()
+        checkCancel(cancel)
         // 说实话报预计时间。「看屏幕」这一步实测要三到四分钟,不提前讲清楚,
         // 用户看着不动的进度条只会以为死机,然后去按停止或者切走 —— 那就白算了。
         cb.onLog("  让视觉模型定位「$description」…(看屏幕要几分钟,别切走)")
-        val (rx, ry) = locate(b64, description, cb)
+        val (rx, ry) = locate(b64, description, cb, cancel)
 
         // 3) 真实像素 = 相对坐标 × 真实屏幕尺寸
         val px = (rx / 1000.0 * screenW).toInt()
         val py = (ry / 1000.0 * screenH).toInt()
 
         // 4) 让电脑点
-        checkCancel()
-        val clickResp = callPc("click_at", JSONObject().put("x", px).put("y", py), cb)
+        checkCancel(cancel)
+        val clickResp = callPc("click_at", JSONObject().put("x", px).put("y", py), cb, cancel)
         if (!clickResp.optBoolean("ok")) {
             return JSONObject().put("ok", false)
                 .put("error", "点击失败:${clickResp.optString("error", "未知")}")
@@ -5454,7 +5623,12 @@ class AiAgent(private val client: TouchpadClient) {
     }
 
     /** 问视觉模型:description 在截图上的相对位置(0~1000)。找不到 / 答非所问则抛异常。 */
-    private fun locate(imageB64: String, description: String, cb: Callback): Pair<Int, Int> {
+    private fun locate(
+        imageB64: String, description: String, cb: Callback,
+        // ★ 2026-11-08（体检 D4）：这一件活自己的停止令牌。视觉这条路一次要几分钟，
+        //   没有它的话工作台里点「停止」，这几分钟一个字节都不会停。
+        cancel: AtomicBoolean? = null,
+    ): Pair<Int, Int> {
         val prompt = buildString {
             append("这是一张 Windows 电脑的屏幕截图。请找到「")
             append(description)
@@ -5499,7 +5673,7 @@ class AiAgent(private val client: TouchpadClient) {
         val reply = chat(
             config.visionBaseUrl, config.visionModel, messages, null, cb::onLog,
             allowCloud = false, extraBody = extra, readTimeoutMs = VISION_TIMEOUT_MS,
-            useStream = false,
+            useStream = false, cancel = cancel,
         )
         val text = reply.optJSONArray("choices")?.optJSONObject(0)
             ?.optJSONObject("message")?.optString("content", "") ?: ""
@@ -5569,8 +5743,11 @@ class AiAgent(private val client: TouchpadClient) {
         // 生成期「正在写的这半句」往哪儿报。不接(NULL)= 和以前完全一样。
         // 只有文本这条路会传它 —— 见 [readSseFull] 里的说明。
         onDelta: ((String) -> Unit)? = null,
+        // ★ 2026-11-08（体检 D4）：这一件活自己的停止令牌（工作台那几档各一个）。
+        //   null = 「她」那条路，落回全局那个 —— 和 [chatOnce] 的规矩一模一样。
+        cancel: AtomicBoolean? = null,
     ): JSONObject {
-        checkCancel()
+        checkCancel(cancel)
         // ★ 「不用时关模型」靠这一行数时间(见 [BrainIdle])。放在**最前面**:
         //   本地这条路可能要先等装载、再等首 token,整段都算「她在用」。
         BrainIdle.noteUse()
@@ -5646,7 +5823,7 @@ class AiAgent(private val client: TouchpadClient) {
                     .put("id_slot", PREFIX_SLOT)
                 val res = chatOnce(
                     url, localBody, config.localDeadlineMs.toInt(), config.apiKey, onDelta,
-                    firstTokenMs = LOCAL_FIRST_TOKEN_MS,
+                    firstTokenMs = LOCAL_FIRST_TOKEN_MS, cancel = cancel,
                 )
                 traceCall("本地", System.currentTimeMillis() - t0, res)
                 // 它这一轮真答上来了 —— 冷却立刻解除,下一轮还给本地机会。
@@ -5684,15 +5861,18 @@ class AiAgent(private val client: TouchpadClient) {
         // ---- 没有云端:维持原样,撞到 503 就带进度地等 ----
         var waitedMs = 0L
         while (true) {
-            checkCancel()
+            checkCancel(cancel)
             val t0 = System.currentTimeMillis()
             try {
-                val res = chatOnce(url, body, readTimeoutMs, config.apiKey, onDelta)
+                // ★ 还欠着冷算的时候别用 120 秒 —— 那必然把十几分钟的冷算掐死在半路,
+                //   而且掐死之后**不许存快照**,于是永远起不来。见 [coldPrefill]。
+                val wait = if (coldPrefill) WARMUP_TIMEOUT_MS else readTimeoutMs
+                val res = chatOnce(url, body, wait, config.apiKey, onDelta, cancel = cancel)
                 traceCall("本地", System.currentTimeMillis() - t0, res)
                 return res
             } catch (e: ContextOverflowException) {
                 // ★ 没有云端可退时的说法。**必须说人话**,因为这条路用户一定会走到:
-                //   他要是没填 key、或者关了「云端兜底」,看到的就只能是这句。
+                //   他要是没填 key、或者关了「云端总闸」,看到的就只能是这句。
                 trace("本地放弃:上下文超了 —— ${e.detail}")
                 throw IOException(
                     "这一轮要带进去的东西超过了本地模型能装下的量" +
@@ -5991,7 +6171,7 @@ class AiAgent(private val client: TouchpadClient) {
         // 服务端**第一个字节**到达的时刻(绝对毫秒);-1 = 到挂掉为止一个字都没来。
         val sawFirst = longArrayOf(-1L)
         val sentAt = System.currentTimeMillis()
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+        val conn = CloudNet.conn(url).apply {
             requestMethod = "POST"
             connectTimeout = 10000
             readTimeout = effectiveTimeout
@@ -6354,6 +6534,20 @@ class AiAgent(private val client: TouchpadClient) {
         private const val PREF = "ai_agent"
 
         /**
+         * 云端总闸现在关着没有 —— **只读一个布尔**，给 [CloudNet] 用。
+         *
+         * ★ 和 [loadConfig] 的区别不是风格：那条路会用 [Config] 的构造把整份配置
+         *   读出来（含 key 的解密），而总闸要在**每一次**出网之前问一遍，
+         *   问的又只是「开还是关」。用 loadConfig 等于每发一个请求就解一次密。
+         */
+        internal fun cloudSwitch(ctx: Context): Boolean =
+            ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+                // ★ 这个默认值必须和 [Config.cloudOn] 的构造默认值**是同一个**。
+                //   两处写成不一样的话，症状是「设置里写着已开启，请求却全被拦」，
+                //   而两边各自看都像对的。
+                .getBoolean("cloudOn", false)
+
+        /**
          * 一轮里最多派出**几个角色**（见 [delegate] / [fanout]）。
          *
          * ★ 这个数不是「算力预算」，是**刹车**：绕圈的模型会一遍遍派同一件事，
@@ -6500,6 +6694,19 @@ class AiAgent(private val client: TouchpadClient) {
         private const val WARMUP_TIMEOUT_MS = 1_800_000
 
         /**
+         * **预热**这一趟的预算：60 分钟。
+         *
+         * ★ 为什么不直接用 [WARMUP_TIMEOUT_MS]：那个数**同时**管着「用户正等着的那一轮」
+         *   (见 [coldPrefill] 那条)。把用户的上限提到一小时是不可以的 —— 他能接受
+         *   「等十几分钟把前缀算完」，不能接受「发一句话等一小时」。
+         *   预热带的是后台线程，多给半小时只影响它自己。
+         *
+         * ★ 为什么是 60：11-08 那次 30 分钟只啃到 6144/8192。按那个速度，
+         *   多给一倍才够把最坏情况包进来。**这是上界，不是预期耗时** —— 算完立刻返回。
+         */
+        private const val PREFILL_TIMEOUT_MS = 3_600_000
+
+        /**
          * 前缀快照存在**哪一个槽**上。0 号。
          *
          * ⚠️ 预热请求会把这个值钉进 `id_slot`,而存盘/还原也认这一个号 —— 三处必须是
@@ -6637,10 +6844,12 @@ class AiAgent(private val client: TouchpadClient) {
                 cloudApiKey = sp.getString("cloudApiKey", d.cloudApiKey)!!,
                 // ★ 读法**故意不走 CONFIG_VERSION**:那个版本闸是给「代码里默认值改过、
                 //   老 prefs 会盖住新默认」准备的(见上面两段)。这里没有那个问题 ——
-                //   盘上没有这一项就是「从没拨过」,默认 true = 和以前一模一样。
+                //   盘上没有这一项就是「从没拨过」,取 [Config] 的默认值(= false = 不开)。
                 //   ★ 也**故意不拿 cloudApiKey 反推**:反推的话「有 key 但关了」就存不下来,
                 //     他一开一关白忙一场 —— 那正是这个开关要解决的问题。
                 cloudOn = sp.getBoolean("cloudOn", d.cloudOn),
+                // ★ 盘上没有就是「没拨过」= 自动（见 [Config.prefillAuto]）。
+                prefillAuto = sp.getBoolean("prefillAuto", d.prefillAuto),
                 // ★ 和 cloudOn 同一个读法：盘上没有就是「从没拨过」，默认开。
                 aliasOn = sp.getBoolean("aliasOn", d.aliasOn),
                 localDeadlineMs = deadline,
@@ -6672,6 +6881,7 @@ class AiAgent(private val client: TouchpadClient) {
                 putString("cloudModel", c.cloudModel)
                 putString("cloudApiKey", c.cloudApiKey)
                 putBoolean("cloudOn", c.cloudOn)
+                putBoolean("prefillAuto", c.prefillAuto)
                 putBoolean("aliasOn", c.aliasOn)
                 putLong("localDeadlineMs", c.localDeadlineMs)
                 putInt("configVersion", CONFIG_VERSION)
