@@ -29,12 +29,12 @@
   <rect width="1200" height="850" fill="url(#glow)"/>
 
   <text x="56" y="45" font-size="20" font-weight="700" fill="#F0F0F3">基于端侧大模型的本地优先多智能体协同与跨设备执行系统</text>
-  <text x="56" y="69" font-size="12" fill="#6A6A78" letter-spacing=".2">ConMarn 程序架构 · v3.1 · 2026-11-07 · 推理、语音与记忆均在设备本地运行，电脑仅承担执行，外部服务默认关闭</text>
+  <text x="56" y="69" font-size="12" fill="#6A6A78" letter-spacing=".2">ConMarn 程序架构 · v3.1.1 · 2026-11-11 · 推理、语音与记忆均在设备本地运行，电脑仅承担执行，外部服务默认关闭</text>
 
   <!-- ================= 手机 ================= -->
   <rect class="band" x="40" y="84" width="1120" height="416" rx="12"/>
   <line class="acc" x1="56" y1="99" x2="84" y2="99"/>
-  <text class="band-l" x="56" y="118">Android 手机（Android 11+ · arm64-v8a）</text>
+  <text class="band-l" x="56" y="118">Android 手机（Android 11+ · 四种 ABI 通用包）</text>
   <text class="band-s" x="1144" y="118" text-anchor="end">推理与记忆在本机 · 执行范围可延伸至局域网内的电脑</text>
 
   <!-- 表现层 -->

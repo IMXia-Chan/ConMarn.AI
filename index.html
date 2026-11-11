@@ -5,17 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
 <title>ConMarn——基于端侧大模型的本地优先多智能体协同与跨设备执行系统</title>
-<meta name="description" content="ConMarn 是基于端侧大模型的本地优先多智能体协同与跨设备执行系统。模型、语音与记忆全部保留在本机，断网可用；除对话之外，还能操作手机与电脑，并同时推进多项任务。开源、免费、无账号。">
+<meta name="description" content="ConMarn 是基于端侧大模型的本地优先多智能体协同与跨设备执行系统。模型、语音与记忆全部保留在本机，断网可用；除对话之外，还能操作手机与电脑，并同时推进多项任务。开源、无账号，提供免费版。">
 
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://imxia-chan.github.io/ConMarn.AI/">
-<meta property="og:title" content="ConMarn · 运行在 Android 设备本地的 AI 角色运行时">
-<meta property="og:description" content="ConMarn 是基于端侧大模型的本地优先多智能体协同与跨设备执行系统。模型、语音与记忆全部保留在本机，断网可用；除对话之外，还能操作手机与电脑，并同时推进多项任务。开源、免费、无账号。">
+<meta property="og:title" content="ConMarn · 基于端侧大模型的本地优先多智能体协同与跨设备执行系统">
+<meta property="og:description" content="ConMarn 是基于端侧大模型的本地优先多智能体协同与跨设备执行系统。模型、语音与记忆全部保留在本机，断网可用；除对话之外，还能操作手机与电脑，并同时推进多项任务。开源、无账号，提供免费版。">
 <meta property="og:image" content="https://imxia-chan.github.io/ConMarn.AI/assets/og.png">
 <meta property="og:locale" content="zh_CN">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="ConMarn · 运行在 Android 设备本地的 AI 角色运行时">
-<meta name="twitter:description" content="ConMarn 是基于端侧大模型的本地优先多智能体协同与跨设备执行系统。模型、语音与记忆全部保留在本机，断网可用；除对话之外，还能操作手机与电脑，并同时推进多项任务。开源、免费、无账号。">
+<meta name="twitter:title" content="ConMarn · 基于端侧大模型的本地优先多智能体协同与跨设备执行系统">
+<meta name="twitter:description" content="ConMarn 是基于端侧大模型的本地优先多智能体协同与跨设备执行系统。模型、语音与记忆全部保留在本机，断网可用；除对话之外，还能操作手机与电脑，并同时推进多项任务。开源、无账号，提供免费版。">
 <meta name="twitter:image" content="https://imxia-chan.github.io/ConMarn.AI/assets/og.png">
 
 <link rel="canonical" href="https://imxia-chan.github.io/ConMarn.AI/">
@@ -60,13 +60,13 @@
       <p class="eyebrow">端侧大模型 · 本地优先 · 多智能体</p>
       <h1>ConMarn</h1>
       <p class="sub">基于端侧大模型的本地优先多智能体协同与跨设备执行系统</p>
-      <p class="lead">一个运行在用户自有 Android 设备上的 AI 角色运行时。模型、语音与记忆全部保留在本机，对外网络访问由一处总开关统一控制，默认关闭。除对话之外，可以操作手机与电脑，并同时推进多项任务。</p>
+      <p class="lead">系统运行在用户自有 Android 设备上：模型、语音与记忆保留在本机，对外访问由单一总开关控制且默认关闭；除对话外，可经能力契约调度本机与边节点设备，并同时推进多项任务。端承担判断，边承担执行，云承担兜底。</p>
       <div class="cta">
         <a class="btn btn-p" href="./ConMarn-3.1.1.apk" download><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 20h16"/></svg>下载 APK</a>
         <a class="btn btn-g" href="./ConMarn-1.0.0-win64.exe" download><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 20h16"/></svg>下载电脑端</a>
         <a class="btn btn-g" href="https://github.com/IMXia-Chan/ConMarn.AI" target="_blank" rel="noopener">查看源码</a>
       </div>
-      <p class="meta"><span>73.1 MB</span><span>arm64-v8a</span><span>Android 11 – 17</span><span>Apache-2.0</span></p>
+      <p class="meta"><span>73.1 MB</span><span>四种 ABI 通用包</span><span>Android 11 – 17</span><span>Apache-2.0</span></p>
       <p class="meta" data-conmarn-pc><span>电脑端 36.9 MB</span><span>Windows 10 / 11 64 位</span><span>未签名，首次运行 Windows 可能提示，选择「仍要运行」</span></p>
       <p class="meta"><span>升级请直接覆盖安装，不要先卸载</span><span>卸载会连同本机的模型、房间与配对数据一并删除</span></p>
     </div>
@@ -79,7 +79,7 @@
 </header>
 
 <div class="figs">
-  <div class="wrap"><div class="fig-grid rv"><div class="fig-item"><div class="fig-v">434<span class="u">ms</span></div><div class="fig-k">快照还原</div><p class="fig-p">恒定前缀首次计算约 11 分钟；结果写盘后，再次还原仅需 434 毫秒。</p></div><div class="fig-item"><div class="fig-v">3<span class="u">件</span></div><div class="fig-k">并行任务</div><p class="fig-p">多智能体工作台同时推进的任务上限，每件可追加轮次、停止与归档。</p></div><div class="fig-item"><div class="fig-v">1,396<span class="u">项</span></div><div class="fig-k">单元测试</div><p class="fig-p">全部通过，失败数为 0。数值取自构建产物。</p></div></div></div>
+  <div class="wrap"><div class="fig-grid rv"><div class="fig-item"><div class="fig-v">434<span class="u">ms</span></div><div class="fig-k">快照还原</div><p class="fig-p">恒定前缀首次计算约 11 分钟；结果写盘后，再次还原仅需 434 毫秒。</p></div><div class="fig-item"><div class="fig-v">3<span class="u">件</span></div><div class="fig-k">并行任务</div><p class="fig-p">多智能体工作台同时推进的任务上限，标准版及以上为三件；每件可追加轮次、停止与归档。</p></div><div class="fig-item"><div class="fig-v">1,419<span class="u">项</span></div><div class="fig-k">单元测试</div><p class="fig-p">数值取自源码标注；最近一次全量构建全部通过。</p></div></div></div>
 </div>
 
 <section class="shots" id="shots">
@@ -100,7 +100,7 @@
     <div class="sec-head rv">
       <div class="sec-idx"><span class="n">DESKTOP</span><span class="k">电脑端</span></div>
       <div>
-        <h2>手机是大脑，电脑是手</h2>
+        <h2>判断在手机，执行在电脑</h2>
         <p class="lead">电脑端程序把电脑上的能力收进同一个窗口：摄像头与麦克风开关、与手机互传文件、配对状态、运行日志与开机自启。程序本身不参与配对与加密，这些仍由后台运行的电脑端服务负责；关闭窗口不影响手机连接。电脑端为可选组件，与手机端配套使用。</p>
       </div>
     </div>
@@ -144,7 +144,7 @@
   <div class="wrap">
     <div class="sec-head rv"><div class="sec-idx"><span class="n">03</span><span class="k">架构</span></div><div><h2>四层分工</h2><p class="lead">手机承担全部推理，电脑只承担执行。<b>这不是部署图，是权限图。</b></p></div></div>
     <div class="arch-fig rv"><img src="./assets/architecture.svg" alt="ConMarn 程序架构图" loading="lazy" width="1200" height="850"></div>
-    <div class="figcap rv" data-hint="·"><span>FIG. 01 — 程序架构</span><span>V3.1.1 · 2026-11-08</span></div>
+    <div class="figcap rv" data-hint="·"><span>FIG. 01 — 程序架构</span><span>V3.1.1 · 2026-11-11</span></div>
     <div class="rows arch-rows rv">
       <div class="row head"><div>层</div><div>回答的问题</div><div>该层失效的后果</div></div>
       <div class="row"><div class="k">表现层</div><div class="a" data-l="回答的问题">当前处于什么状态</div><div class="b" data-l="该层失效的后果">无界面，后台能力仍在</div></div><div class="row"><div class="k">编排层</div><div class="a" data-l="回答的问题">这件事进行到第几步</div><div class="b" data-l="该层失效的后果">可对话，但无法完成多步任务</div></div><div class="row"><div class="k">执行层</div><div class="a" data-l="回答的问题">这件事由谁动手</div><div class="b" data-l="该层失效的后果">只能表达，不能执行</div></div><div class="row"><div class="k">模型层</div><div class="a" data-l="回答的问题">推理依据从何而来</div><div class="b" data-l="该层失效的后果">无生成能力，界面与数据仍在</div></div>
@@ -154,7 +154,7 @@
 
 <section id="capabilities">
   <div class="wrap">
-    <div class="sec-head rv"><div class="sec-idx"><span class="n">04</span><span class="k">能力</span></div><div><h2>八项能力</h2><p class="lead">角色、执行与编排共用同一套端侧推理底座。每一项都可以单独关闭。</p></div></div>
+    <div class="sec-head rv"><div class="sec-idx"><span class="n">04</span><span class="k">能力</span></div><div><h2>八项能力</h2><p class="lead">角色、执行与编排共用同一套端侧推理底座。各项能力均可关闭，关闭后其余能力不受影响。</p></div></div>
     <div class="caps rv"><div class="cap"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20.5c0-3.7 3.4-6.4 7.5-6.4s7.5 2.7 7.5 6.4"/></svg><div><h3>角色与场景</h3><p>三维角色与可交互房间场景。窗外光照随真实天气与昼夜变化，按时段问候并报告当日事项。</p></div></div><div class="cap"><svg viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg><div><h3>语音</h3><p>本地唤醒词、断句、识别与合成，全程不联网。播报期间自动关闭采集，不会自触发。</p></div></div><div class="cap"><svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="12.5" rx="1.5"/><path d="M8 21h8M12 17.5V21"/></svg><div><h3>电脑端工具</h3><p>14 个具名工具，按「控件树 → 文字识别 → 视觉定位」三级降级，耗时自毫秒级递增至秒级。</p></div></div><div class="cap"><svg viewBox="0 0 24 24"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 5.5h3M12 18.5h.01"/></svg><div><h3>本机与沙盒</h3><p>操作本机应用与日程。内置沙盒提供一套无需 root 的用户态 Linux 环境。</p></div></div><div class="cap"><svg viewBox="0 0 24 24"><rect x="3" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1"/></svg><div><h3>多智能体工作台</h3><p>三件任务并行，每件可追加轮次、停止与归档。事件按任务分别记录，过程可回溯。</p></div></div><div class="cap"><svg viewBox="0 0 24 24"><path d="M12 2.5l2.7 6.2 6.7 1-4.9 4.6 1.2 6.7-5.7-3.1-5.7 3.1 1.2-6.7L2.6 9.7l6.7-1z"/></svg><div><h3>技能与经验</h3><p>已完成的流程可沉淀为可重放的技能；观察所得经验在后续任务中被召回。全部存于本机。</p></div></div><div class="cap"><svg viewBox="0 0 24 24"><path d="M9.5 13.5a3.5 3.5 0 0 0 5 0l3-3a3.54 3.54 0 0 0-5-5l-1 1"/><path d="M14.5 10.5a3.5 3.5 0 0 0-5 0l-3 3a3.54 3.54 0 0 0 5 5l1-1"/></svg><div><h3>连接与传输</h3><p>同一局域网内点对点连接，动态配对码与动态口令校验；文件双向传输并校验完整性。</p></div></div><div class="cap"><svg viewBox="0 0 24 24"><path d="M17.5 18.5H7a4.5 4.5 0 0 1-.7-8.95A6 6 0 0 1 17.6 9.6a4.5 4.5 0 0 1-.1 8.9z"/><path d="M12 12v5m0 0l-2-2m2 2l2-2"/></svg><div><h3>云端与连接器</h3><p>用户自备密钥，兼容主流协议；支持 MCP、OAuth 与自建接口，全部受总开关控制。</p></div></div></div>
   </div>
 </section>
@@ -176,7 +176,7 @@
 <section id="spec">
   <div class="wrap">
     <div class="sec-head rv"><div class="sec-idx"><span class="n">07</span><span class="k">规格</span></div><div><h2>规格与规模</h2><p class="lead">以下数值取自源码工作树、构建产物与真机安装包，未作估算。</p></div></div>
-    <div class="specs rv"><div class="spec"><div class="k">系统版本</div><div class="v">Android 11 – 17</div></div><div class="spec"><div class="k">处理器架构</div><div class="v">arm64-v8a</div></div><div class="spec"><div class="k">安装包</div><div class="v">73,080,838 字节（约 73.1 MB）</div></div><div class="spec"><div class="k">空闲常驻内存</div><div class="v">约 43 MB</div></div><div class="spec"><div class="k">冷启动唤醒</div><div class="v">2.9 秒（自 swap 恢复）</div></div><div class="spec"><div class="k">电脑端</div><div class="v">Windows · Python 服务，无第三方框架依赖</div></div><div class="spec"><div class="k">许可</div><div class="v">Apache-2.0；模型文件不随仓库分发</div></div><div class="spec"><div class="k">源码规模</div><div class="v">70,410 行 Kotlin（174 文件）· 13,235 行电脑端服务（26 文件）</div></div><div class="spec"><div class="k">单元测试</div><div class="v">1,396 项，0 失败</div></div><div class="spec"><div class="k">电脑端工具</div><div class="v">14 个具名工具</div></div></div>
+    <div class="specs rv"><div class="spec"><div class="k">系统版本</div><div class="v">Android 11 – 17</div></div><div class="spec"><div class="k">处理器架构</div><div class="v">arm64-v8a / armeabi-v7a / x86 / x86_64（通用包）</div></div><div class="spec"><div class="k">安装包</div><div class="v">73,080,838 字节（约 73.1 MB）</div></div><div class="spec"><div class="k">空闲常驻内存</div><div class="v">约 43 MB</div></div><div class="spec"><div class="k">冷启动唤醒</div><div class="v">2.9 秒（自 swap 恢复）</div></div><div class="spec"><div class="k">电脑端</div><div class="v">Windows · Python 服务，无第三方框架依赖</div></div><div class="spec"><div class="k">许可</div><div class="v">Apache-2.0；模型文件不随仓库分发</div></div><div class="spec"><div class="k">源码规模</div><div class="v">72,657 行 Kotlin（180 文件，不含测试）· 9,848 行电脑端服务（11 文件，另有 17 个自测脚本）</div></div><div class="spec"><div class="k">单元测试</div><div class="v">1,419 项，0 失败</div></div><div class="spec"><div class="k">电脑端工具</div><div class="v">14 个具名工具</div></div></div>
   </div>
 </section>
 
@@ -190,16 +190,16 @@
 <section id="faq">
   <div class="wrap">
     <div class="sec-head rv"><div class="sec-idx"><span class="n">09</span><span class="k">问答</span></div><div><h2>常见问题</h2><p class="lead">安装前值得先看的六条。</p></div></div>
-    <div class="faq rv"><details><summary>需要联网才能使用吗？</summary><div class="a">不需要。模型、语音与记忆均在本机运行，飞行模式下可以完整对话与执行。仅当主动开启<b>云端备用通道</b>时才会发出外部请求，该开关位于设置内，默认关闭。</div></details><details><summary>哪些设备可以安装？</summary><div class="a">需要 <b>Android 11 及以上</b>、<b>arm64-v8a</b> 架构，近年主流 Android 设备均属该架构。安装包 73.1 MB，不含模型文件。端侧推理对内存与散热有明确要求，低端设备的响应会明显变慢。</div></details><details><summary>是否需要付费？</summary><div class="a"><b>个人版完全免费</b>，代码以 Apache-2.0 许可开源，本地运行不产生任何服务端费用。如自行开启云端通道，使用自备 API 密钥，费用由服务方按用量结算。</div></details><details><summary>电脑端不安装会怎样？</summary><div class="a">电脑端仅承担执行。未安装时，涉及电脑的功能不可用，手机侧的角色、语音、工作台与沙盒不受影响。</div></details><details><summary>数据是否会被上传？</summary><div class="a">截图、音频与记忆均留在本机，没有上传路径。发往云端的文本会先做代号替换，对照表仅存本机。需要说明的是，代号替换不是加密，其作用仅是使云端无法读取原文。</div></details><details><summary>为什么没有 iOS 版本？</summary><div class="a">本系统依赖端侧模型加载、前台常驻服务与后台音频采集三项能力，该三项在 iOS 上均不成立，因此不提供该平台版本。Windows 电脑端仅作为执行端，不承担推理。</div></details></div>
+    <div class="faq rv"><details><summary>需要联网才能使用吗？</summary><div class="a">不需要。模型、语音与记忆均在本机运行，飞行模式下可以完整对话与执行。仅当主动开启<b>云端备用通道</b>时才会发出外部请求，该开关位于设置内，默认关闭。</div></details><details><summary>哪些设备可以安装？</summary><div class="a">需要 <b>Android 11 及以上</b>。安装包为通用架构，同时包含 <b>arm64-v8a、armeabi-v7a、x86、x86_64</b> 四种 ABI。安装包 73.1 MB，不含模型文件。端侧推理对内存与散热有明确要求，低端设备的响应会明显变慢。</div></details><details><summary>是否需要付费？</summary><div class="a">提供<b>免费版</b>，可使用本地对话、语音与单任务执行。标准版 39 元/月、专业版 79 元/月，差异在并行任务数、自动任务数、设备节点数与连接器接入，核心功能各档均不降级。代码以 Apache-2.0 许可开源，可自行构建，本地运行不产生任何服务端费用；如自行开启云端通道，使用自备 API 密钥，费用由服务方按用量结算。</div></details><details><summary>电脑端不安装会怎样？</summary><div class="a">电脑端仅承担执行。未安装时，涉及电脑的功能不可用，手机侧的角色、语音、工作台与沙盒不受影响。</div></details><details><summary>数据是否会被上传？</summary><div class="a">截图、音频与记忆均留在本机，没有上传路径。发往云端的文本会先做代号替换，对照表仅存本机。需要说明的是，代号替换不是加密，其作用仅是使云端无法读取原文。</div></details><details><summary>为什么没有 iOS 版本？</summary><div class="a">本系统依赖端侧模型加载、前台常驻服务与后台音频采集三项能力，该三项在 iOS 上均不成立，因此不提供该平台版本。Windows 电脑端仅作为执行端，不承担推理。</div></details></div>
   </div>
 </section>
 
 <section id="opensource">
   <div class="wrap">
-    <div class="sec-head rv"><div class="sec-idx"><span class="n">10</span><span class="k">开源</span></div><div><h2>开源与商业化</h2><p class="lead">源代码以 Apache-2.0 全部公开，<b>个人使用不收费</b>。商业收入来自机构侧的授权、部署与维护，不来自对个人用户的功能限制。</p></div></div>
+    <div class="sec-head rv"><div class="sec-idx"><span class="n">10</span><span class="k">开源</span></div><div><h2>开源与商业化</h2><p class="lead">源代码以 Apache-2.0 全部公开，可自行构建。个人版按<b>免费版、标准版、专业版</b>分档，差异在并行任务数与设备节点数，核心功能各档均不降级；商业收入另来自机构侧的授权、部署与维护。</p></div></div>
     <div class="rows rv">
       <div class="row head"><div></div><div>个人版</div><div>机构版</div></div>
-      <div class="row"><div class="k">授权</div><div class="a" data-l="个人版">Apache-2.0 开源，可自行构建</div><div class="b" data-l="机构版">商业授权，支持私有化部署</div></div><div class="row"><div class="k">费用</div><div class="a" data-l="个人版">免费</div><div class="b" data-l="机构版">按装机规模收取年费，或按项目报价</div></div><div class="row"><div class="k">范围</div><div class="a" data-l="个人版">全部功能，无账号、无订阅</div><div class="b" data-l="机构版">部署实施 · 定制技能 · 系统集成 · 批量配置</div></div><div class="row"><div class="k">支持</div><div class="a" data-l="个人版">仓库 Issue 支持</div><div class="b" data-l="机构版">专人支持 · 年度维护与版本更新</div></div>
+      <div class="row"><div class="k">授权</div><div class="a" data-l="个人版">Apache-2.0 开源，可自行构建</div><div class="b" data-l="机构版">商业授权，支持私有化部署</div></div><div class="row"><div class="k">费用</div><div class="a" data-l="个人版">免费版 0 元；标准版 39 元/月（年付 288 元）；专业版 79 元/月（年付 588 元）</div><div class="b" data-l="机构版">按单项目报价，年度维护按部署额两成计</div></div><div class="row"><div class="k">范围</div><div class="a" data-l="个人版">免费版：本地对话、语音与单任务执行；标准版增设三任务并行与技能经验库；专业版增设 Agent 长任务、连接器与不限设备节点</div><div class="b" data-l="机构版">部署实施 · 定制技能 · 系统集成 · 批量配置</div></div><div class="row"><div class="k">支持</div><div class="a" data-l="个人版">仓库 Issue 支持；专业版优先响应</div><div class="b" data-l="机构版">专人支持 · 年度维护与版本更新</div></div>
     </div>
     <p class="os-note rv">推理在本机完成，<b>个人版不产生任何服务端支出</b>，用户增长不扩大成本。机构采购本地运行的软件前需要审计代码、确认关闭总闸时数据不出内网；开源是进入该市场的前提，而非让步。</p>
   </div>
@@ -208,12 +208,12 @@
 <section class="dl">
   <div class="wrap">
     <h2>把模型留在自己手里</h2>
-    <p>免费 · 开源 · 无账号 · 无订阅</p>
+    <p>开源 · 无账号 · 免费版可用</p>
     <div class="cta">
       <a class="btn btn-p" href="./ConMarn-3.1.1.apk" download><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 20h16"/></svg>下载 APK</a>
       <a class="btn btn-g" href="https://github.com/IMXia-Chan/ConMarn.AI" target="_blank" rel="noopener">查看源码</a>
     </div>
-    <p class="meta"><span>73.1 MB</span><span>arm64-v8a</span><span>Android 11 – 17</span></p>
+    <p class="meta"><span>73.1 MB</span><span>四种 ABI 通用包</span><span>Android 11 – 17</span></p>
   </div>
 </section>
 
@@ -233,7 +233,7 @@
     </div>
     <div class="flegal">
       <span class="fcopy">© 2026 ConMarn · Apache-2.0</span>
-      <span class="ftm">ConMarn™ 为其所有者的商标。文中提及的其他名称与标识归各自所有者所有。</span>
+      <span class="ftm">文中提及的名称与标识归各自所有者所有。</span>
       <span class="flinks">
         <a href="privacy.html">隐私政策</a>
         <a href="terms.html">使用条款</a>

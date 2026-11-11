@@ -29,12 +29,12 @@
   <rect width="1200" height="850" fill="url(#glow)"/>
 
   <text x="56" y="45" font-size="20" font-weight="700" fill="#F0F0F3">A local-first, multi-agent system for on-device inference and cross-device execution</text>
-  <text x="56" y="69" font-size="12" fill="#6A6A78" letter-spacing=".2">ConMarn architecture · v3.1 · 2026-11-07 · inference, speech and memory stay on-device; the computer executes only; external services default off</text>
+  <text x="56" y="69" font-size="12" fill="#6A6A78" letter-spacing=".2">ConMarn architecture · v3.1.1 · 2026-11-11 · inference, speech and memory stay on-device; the computer executes only; external services default off</text>
 
   <!-- ================= 手机 ================= -->
   <rect class="band" x="40" y="84" width="1120" height="416" rx="12"/>
   <line class="acc" x1="56" y1="99" x2="84" y2="99"/>
-  <text class="band-l" x="56" y="118">Android phone (Android 11+ · arm64-v8a)</text>
+  <text class="band-l" x="56" y="118">Android phone (Android 11+ · universal, 4 ABIs)</text>
   <text class="band-s" x="1144" y="118" text-anchor="end">Inference and memory stay here · execution can reach computers on the LAN</text>
 
   <!-- 表现层 -->
